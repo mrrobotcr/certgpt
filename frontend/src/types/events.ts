@@ -69,7 +69,16 @@ export interface ErrorAnswer {
   message: string
 }
 
-export type ParsedAnswer =
+/**
+ * Common fields for enhanced answers with confidence tracking
+ */
+export interface ConfidenceMetadata {
+  confidence?: number       // 0-100 confidence level
+  verified?: boolean        // true if web_search was used
+  sources?: string[]        // URLs consulted for verification
+}
+
+export type ParsedAnswer = (
   | SingleChoiceAnswer
   | MultipleChoiceAnswer
   | DragDropAnswer
@@ -79,3 +88,4 @@ export type ParsedAnswer =
   | YesNoAnswer
   | CaseStudyAnswer
   | ErrorAnswer
+) & ConfidenceMetadata

@@ -204,6 +204,42 @@
           <div class="fallback-text">{{ rawAnswer }}</div>
         </div>
 
+        <!-- Confidence & Verification -->
+        <div v-if="parsedAnswer.confidence !== undefined || parsedAnswer.verified" class="confidence-section">
+          <div class="confidence-row">
+            <div v-if="parsedAnswer.confidence !== undefined" class="confidence-indicator">
+              <span class="confidence-label">CONFIDENCE</span>
+              <div class="confidence-bar-wrapper">
+                <div
+                  class="confidence-bar"
+                  :style="{ width: `${parsedAnswer.confidence}%` }"
+                  :class="confidenceLevel"
+                ></div>
+              </div>
+              <span class="confidence-value" :class="confidenceLevel">{{ parsedAnswer.confidence }}%</span>
+            </div>
+            <div v-if="parsedAnswer.verified" class="verified-badge">
+              <span class="verified-icon">🔍</span>
+              <span class="verified-text">WEB VERIFIED</span>
+            </div>
+          </div>
+          <div v-if="parsedAnswer.sources && parsedAnswer.sources.length > 0" class="sources-section">
+            <span class="sources-label">Sources:</span>
+            <div class="sources-list">
+              <a
+                v-for="(source, idx) in parsedAnswer.sources"
+                :key="idx"
+                :href="source"
+                target="_blank"
+                rel="noopener"
+                class="source-link"
+              >
+                {{ formatSourceUrl(source) }}
+              </a>
+            </div>
+          </div>
+        </div>
+
         <!-- Metadata -->
         <div class="answer-meta">
           <span class="meta-time">{{ formatTimestamp(currentAnswer.timestamp) }}</span>
@@ -231,6 +267,9 @@ const { connected, isProcessing, currentAnswer } = useSocket()
 interface FallbackAnswer {
   type: 'fallback'
   text: string
+  confidence?: number
+  verified?: boolean
+  sources?: string[]
 }
 
 type FullParsedAnswer = ParsedAnswer | FallbackAnswer
@@ -312,6 +351,28 @@ const formatTimestamp = (timestamp: string) => {
     })
   } catch {
     return timestamp
+  }
+}
+
+// Confidence level for styling
+const confidenceLevel = computed(() => {
+  const confidence = parsedAnswer.value.confidence
+  if (confidence === undefined) return ''
+  if (confidence >= 90) return 'high'
+  if (confidence >= 70) return 'medium'
+  return 'low'
+})
+
+// Format source URL to show just the domain/path
+const formatSourceUrl = (url: string) => {
+  try {
+    const parsed = new URL(url)
+    const path = parsed.pathname.length > 30
+      ? parsed.pathname.substring(0, 30) + '...'
+      : parsed.pathname
+    return `${parsed.hostname}${path}`
+  } catch {
+    return url.length > 40 ? url.substring(0, 40) + '...' : url
   }
 }
 </script>
@@ -1035,6 +1096,138 @@ const formatTimestamp = (timestamp: string) => {
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Confidence Section */
+.confidence-section {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+}
+
+.confidence-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.confidence-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 200px;
+}
+
+.confidence-label {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.confidence-bar-wrapper {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confidence-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.confidence-bar.high {
+  background: linear-gradient(90deg, var(--accent-green), #4ade80);
+}
+
+.confidence-bar.medium {
+  background: linear-gradient(90deg, var(--accent-yellow), #fbbf24);
+}
+
+.confidence-bar.low {
+  background: linear-gradient(90deg, var(--accent-magenta), #f87171);
+}
+
+.confidence-value {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 700;
+  min-width: 3rem;
+  text-align: right;
+}
+
+.confidence-value.high { color: var(--accent-green); }
+.confidence-value.medium { color: var(--accent-yellow); }
+.confidence-value.low { color: var(--accent-magenta); }
+
+.verified-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(67,97,238,0.15);
+  border: 1px solid var(--accent-blue);
+  border-radius: 100px;
+}
+
+.verified-icon {
+  font-size: 0.875rem;
+}
+
+.verified-text {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--accent-blue);
+}
+
+.sources-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sources-label {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.sources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.source-link {
+  font-size: 0.75rem;
+  color: var(--accent-cyan);
+  text-decoration: none;
+  padding: 0.25rem 0.5rem;
+  background: rgba(0,245,212,0.1);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-link:hover {
+  background: rgba(0,245,212,0.2);
+  color: var(--text-primary);
 }
 
 /* Metadata */
