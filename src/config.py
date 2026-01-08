@@ -46,9 +46,16 @@ class Config:
         if self.ai_provider == 'gemini' and not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY not found in .env file (required for gemini provider)")
 
-        self.openai_model = self.yaml_config['openai']['model']
-        self.openai_max_tokens = self.yaml_config['openai']['max_tokens']
-        self.openai_temperature = self.yaml_config['openai']['temperature']
+        openai_config = self.yaml_config.get('openai', {})
+        self.openai_model = openai_config.get('model', 'gpt-5.2')
+        self.openai_max_tokens = openai_config.get('max_tokens', 4000)
+        self.openai_temperature = openai_config.get('temperature', 0.3)
+
+        # New OpenAI Responses API options
+        self.openai_reasoning = openai_config.get('reasoning', {'effort': 'xhigh', 'summary': 'auto'})
+        self.openai_tools = openai_config.get('tools', [])
+        self.openai_store = openai_config.get('store', False)
+        self.openai_include = openai_config.get('include', [])
 
         # Application Mode
         self.app_mode = os.getenv('APP_MODE', 'dev')

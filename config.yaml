@@ -3,7 +3,7 @@
 # AI Provider Configuration
 ai:
   # Provider to use: 'openai' or 'gemini'
-  provider: 'gemini'
+  provider: 'openai'
 
 # Keyboard Configuration
 keyboard:
@@ -34,6 +34,23 @@ openai:
   max_tokens: 4000
   # Temperature (0.0-2.0, lower = more focused)
   temperature: 0.3
+  # Reasoning configuration
+  reasoning:
+    effort: 'xhigh'
+    summary: 'auto'
+  # Tools configuration
+  tools:
+    - type: 'web_search'
+      user_location:
+        type: 'approximate'
+        country: 'CR'
+      search_context_size: 'high'
+  # Store responses
+  store: true
+  # Include in response
+  include:
+    - 'reasoning.encrypted_content'
+    - 'web_search_call.action.sources'
 
 # Logging Configuration
 logging:

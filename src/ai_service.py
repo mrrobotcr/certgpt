@@ -100,14 +100,15 @@ class AIService:
     def _analyze_with_responses_api(self, image: Image.Image, start_time: datetime) -> dict:
         """
         Analyze using the new Responses API (GPT-5.x)
+        Uses config for reasoning, tools, store, and include options
         """
         # Convert image to base64
         image_base64 = self._image_to_base64(image)
 
-        # Prepare Responses API parameters
-        response = self.client.responses.create(
-            model=self.config.openai_model,
-            input=[
+        # Build API parameters from config
+        api_params = {
+            "model": self.config.openai_model,
+            "input": [
                 {
                     "type": "message",
                     "role": "user",
@@ -123,18 +124,29 @@ class AIService:
                     ]
                 }
             ],
-            text={
+            "text": {
                 "format": {
                     "type": "text"
                 },
                 "verbosity": "low"  # Concise answers for exams
             },
-            reasoning={
-                "effort": "high",  # High reasoning for exam questions
-                "summary": "auto"
-            },
-            store=False  # Don't store in OpenAI
-        )
+            "reasoning": self.config.openai_reasoning,
+            "store": self.config.openai_store
+        }
+
+        # Add tools if configured (e.g., web_search)
+        if self.config.openai_tools:
+            api_params["tools"] = self.config.openai_tools
+
+        # Add include if configured (e.g., reasoning.encrypted_content)
+        if self.config.openai_include:
+            api_params["include"] = self.config.openai_include
+
+        logger.debug(f"Responses API params: reasoning={self.config.openai_reasoning}, "
+                     f"tools={len(self.config.openai_tools)}, store={self.config.openai_store}")
+
+        # Call OpenAI Responses API
+        response = self.client.responses.create(**api_params)
 
         # Debug: log response structure
         logger.debug(f"Response type: {type(response)}")
@@ -353,23 +365,30 @@ class AIService:
                 )
                 logger.info("Gemini API connection test successful")
             elif self._uses_responses_api():
-                # Test with Responses API (GPT-5.x)
-                response = self.client.responses.create(
-                    model=self.config.openai_model,
-                    input=[
+                # Test with Responses API (GPT-5.x) using config options
+                api_params = {
+                    "model": self.config.openai_model,
+                    "input": [
                         {
                             "type": "message",
                             "role": "user",
                             "content": [{"type": "input_text", "text": "Test"}]
                         }
                     ],
-                    text={
+                    "text": {
                         "format": {"type": "text"},
                         "verbosity": "low"
                     },
-                    store=False
-                )
-                logger.info("OpenAI API connection test successful")
+                    "reasoning": self.config.openai_reasoning,
+                    "store": self.config.openai_store
+                }
+                if self.config.openai_tools:
+                    api_params["tools"] = self.config.openai_tools
+                if self.config.openai_include:
+                    api_params["include"] = self.config.openai_include
+
+                response = self.client.responses.create(**api_params)
+                logger.info(f"OpenAI API connection test successful (reasoning: {self.config.openai_reasoning.get('effort', 'default')})")
             else:
                 # Test with Completions API (GPT-4o and earlier)
                 response = self.client.chat.completions.create(
