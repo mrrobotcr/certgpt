@@ -1,0 +1,47 @@
+# ExamsGPT Configuration
+
+# AI Provider Configuration
+ai:
+  # Provider to use: 'openai' or 'gemini'
+  provider: 'gemini'
+
+# Keyboard Configuration
+keyboard:
+  # Key to trigger screenshot (configurable)
+  # Options: any single key like \, /, f12, etc.
+  # Or combinations like ctrl+\, cmd+\, alt+\
+  trigger_key: '='
+
+# Mouse Configuration
+mouse:
+  # Enable middle mouse button (scroll wheel click) as secondary trigger
+  enable_middle_button: true
+
+# Screenshot Configuration
+screenshot:
+  # Save screenshots after capture (for debugging/history)
+  save_screenshots: true
+  # Screenshot directory
+  directory: 'screenshots'
+  # Image format
+  format: 'png'
+
+# OpenAI Configuration
+openai:
+  # Model to use (gpt-4o, gpt-5.2, etc.)
+  model: 'gpt-5.2'
+  # Max tokens for response
+  max_tokens: 4000
+  # Temperature (0.0-2.0, lower = more focused)
+  temperature: 0.3
+
+# Logging Configuration
+logging:
+  # Log level (DEBUG, INFO, WARNING, ERROR)
+  level: 'INFO'
+  # Save logs to file
+  save_to_file: true
+  # Log directory
+  directory: 'logs'
+  # Save response history
+  save_history: true

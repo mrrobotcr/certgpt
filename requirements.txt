@@ -1,0 +1,15 @@
+# Core dependencies
+openai>=1.55.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+mss>=9.0.1
+pynput>=1.7.6
+pillow>=10.0.0
+requests>=2.31.0
+
+# Optional dependencies
+# Uncomment when needed:
+# python-socketio>=5.11.0
+
+# Gemini provider (required only if using ai.provider: gemini)
+google-genai>=1.0.0

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Service identifier -->
+    <key>Label</key>
+    <string>com.blueorbit.examsgpt</string>
+
+    <!-- Program to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/johelcastillo/Documents/BlueOrbit/examsGPT/venv/bin/python</string>
+        <string>/Users/johelcastillo/Documents/BlueOrbit/examsGPT/main.py</string>
+    </array>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/johelcastillo/Documents/BlueOrbit/examsGPT</string>
+
+    <!-- Run when user logs in -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Keep alive - restart if crashes -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Restart automatically after crash -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Standard output log -->
+    <key>StandardOutPath</key>
+    <string>/Users/johelcastillo/Documents/BlueOrbit/examsGPT/logs/service.out.log</string>
+
+    <!-- Standard error log -->
+    <key>StandardErrorPath</key>
+    <string>/Users/johelcastillo/Documents/BlueOrbit/examsGPT/logs/service.err.log</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Run in background (no GUI) -->
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Nice level (lower priority) -->
+    <key>Nice</key>
+    <integer>5</integer>
+</dict>
+</plist>

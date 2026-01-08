@@ -1,0 +1,43 @@
+# Python service (not needed for web container)
+src/
+main.py
+requirements.txt
+config.yaml
+venv/
+__pycache__/
+*.pyc
+
+# Old Nuxt frontend
+web/
+
+# Service scripts
+service/
+
+# Logs
+logs/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Environment (secrets should be injected by Dockploy)
+.env
+.env.*
+
+# Node modules (will be installed fresh)
+node_modules/
+frontend/node_modules/
+server/node_modules/
+
+# Build artifacts
+frontend/dist/
+server/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
