@@ -136,7 +136,7 @@ RULES:
 - Return ONLY valid JSON, no explanations
 - Detect question type from visual cues (checkboxes=multiple, radio=single, drag areas, tables, etc.)
 - For single/multiple: include the letter AND full option text when visible
-- Be precise with the answer - this is for exam practice"""
+- Be precise with the answer - this is for a real exam"""
 
     def __repr__(self) -> str:
         model = self.gemini_model if self.ai_provider == 'gemini' else self.openai_model

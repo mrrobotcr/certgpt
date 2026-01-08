@@ -142,8 +142,23 @@ class AIService:
         if self.config.openai_include:
             api_params["include"] = self.config.openai_include
 
-        logger.debug(f"Responses API params: reasoning={self.config.openai_reasoning}, "
-                     f"tools={len(self.config.openai_tools)}, store={self.config.openai_store}")
+        # Log actual API params being sent (mask base64 image)
+        import json
+        import copy
+
+        # Create a copy for logging with masked image
+        log_params = copy.deepcopy(api_params)
+        for inp in log_params.get("input", []):
+            if isinstance(inp, dict) and "content" in inp:
+                for content in inp["content"]:
+                    if isinstance(content, dict) and "image_url" in content:
+                        content["image_url"] = "[BASE64_IMAGE_DATA_MASKED]"
+
+        logger.info("=" * 60)
+        logger.info("OpenAI Responses API - ACTUAL REQUEST PAYLOAD")
+        logger.info("=" * 60)
+        logger.info(json.dumps(log_params, indent=2, default=str))
+        logger.info("=" * 60)
 
         # Call OpenAI Responses API
         response = self.client.responses.create(**api_params)

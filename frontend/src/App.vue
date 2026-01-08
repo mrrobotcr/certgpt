@@ -101,13 +101,25 @@
         <div v-else-if="parsedAnswer.type === 'hotarea'" class="answer-card hotarea">
           <div class="answer-header">
             <span class="answer-type-badge hotarea">HOT AREA</span>
+            <span class="answer-count">{{ parsedAnswer.selections?.length }} selection{{ parsedAnswer.selections?.length > 1 ? 's' : '' }}</span>
           </div>
           <div class="hotarea-selections">
             <div v-for="(sel, idx) in parsedAnswer.selections" :key="idx" class="hotarea-cell">
-              <div class="cell-location">
-                <span class="cell-row">{{ sel.row }}</span>
-                <span class="cell-separator">×</span>
-                <span class="cell-column">{{ sel.column }}</span>
+              <div class="cell-index">{{ idx + 1 }}</div>
+              <div class="cell-content">
+                <div class="cell-label">
+                  <span class="label-icon">&#x25B6;</span>
+                  <span class="label-text">ROW</span>
+                </div>
+                <div class="cell-value row-value">{{ sel.row }}</div>
+              </div>
+              <div class="cell-divider"></div>
+              <div class="cell-content">
+                <div class="cell-label">
+                  <span class="label-icon">&#x25BC;</span>
+                  <span class="label-text">COL</span>
+                </div>
+                <div class="cell-value col-value">{{ sel.column }}</div>
               </div>
             </div>
           </div>
@@ -740,42 +752,87 @@ const formatTimestamp = (timestamp: string) => {
   font-weight: 500;
 }
 
-/* Hot Area */
+/* Hot Area - Mobile First */
 .hotarea-selections {
   padding: 1rem;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.75rem;
 }
 
 .hotarea-cell {
-  padding: 1rem;
-  background: linear-gradient(135deg, rgba(255,107,53,0.2), rgba(255,107,53,0.1));
-  border: 2px solid var(--accent-orange);
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-secondary);
   border-radius: var(--radius-md);
-  flex: 1;
-  min-width: 140px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  position: relative;
 }
 
-.cell-location {
+.cell-index {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  min-width: 2.5rem;
+  background: var(--accent-orange);
+  color: var(--bg-primary);
   font-family: var(--font-mono);
   font-weight: 700;
+  font-size: 1rem;
 }
 
-.cell-row {
+.cell-content {
+  flex: 1;
+  padding: 0.875rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cell-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.625rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.label-icon {
+  font-size: 0.5rem;
   color: var(--accent-orange);
 }
 
-.cell-separator {
-  color: var(--text-muted);
+.cell-value {
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary);
+  word-break: break-word;
 }
 
-.cell-column {
+.row-value {
+  color: var(--accent-orange);
+}
+
+.col-value {
   color: var(--text-primary);
+}
+
+.cell-divider {
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--accent-orange),
+    transparent
+  );
+  opacity: 0.4;
 }
 
 /* Sequence */
