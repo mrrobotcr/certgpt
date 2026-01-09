@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Service identifier -->
+    <key>Label</key>
+    <string>com.blueorbit.examsgpt</string>
+
+    <!-- Program to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PROJECT_DIR__/service/examsgpt-wrapper.sh</string>
+    </array>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+
+    <!-- Run when user logs in -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Keep alive - robust restart configuration -->
+    <key>KeepAlive</key>
+    <dict>
+        <!-- Restart if crashes (exit code != 0) -->
+        <key>SuccessfulExit</key>
+        <false/>
+
+        <!-- Restart even if it crashes immediately -->
+        <key>Crashed</key>
+        <true/>
+
+        <!-- Restart if the network becomes unavailable -->
+        <key>NetworkState</key>
+        <true/>
+    </dict>
+
+    <!-- Restart automatically after crash with aggressive retry -->
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <!-- Exit timeout - wait before force killing -->
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+
+    <!-- Standard output log -->
+    <key>StandardOutPath</key>
+    <string>__PROJECT_DIR__/logs/service.out.log</string>
+
+    <!-- Standard error log -->
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_DIR__/logs/service.err.log</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <!-- Run in background (no GUI) -->
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Nice level (lower priority) -->
+    <key>Nice</key>
+    <integer>5</integer>
+
+    <!-- Abandon process group - don't kill child processes on crash -->
+    <key>AbandonProcessGroup</key>
+    <true/>
+
+    <!-- Soft resource limits -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <!-- Limit memory to prevent runaway processes -->
+        <key>NumberOfFiles</key>
+        <integer>1024</integer>
+    </dict>
+
+    <!-- Restart on failure - always restart if it crashes -->
+    <key>OnFailure</key>
+    <array>
+        <string>restart</string>
+    </array>
+</dict>
+</plist>

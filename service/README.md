@@ -7,6 +7,9 @@ Run ExamsGPT as an invisible macOS background service using **launchd**.
 ✅ **Silent Operation**: Runs completely in the background, no terminal window
 ✅ **Auto-start**: Starts automatically when you log in
 ✅ **Auto-restart**: Automatically restarts if it crashes
+✅ **Smart Recovery**: Detects transient errors and retries with exponential backoff
+✅ **Network Resilience**: Automatically recovers from network failures
+✅ **Crash Prevention**: Max 10 restarts per 5-minute window prevents infinite crash loops
 ✅ **No Dock Icon**: Invisible to other applications
 ✅ **Low Priority**: Runs with nice priority to not affect system performance
 ✅ **Persistent Logs**: All output saved to log files
@@ -89,7 +92,7 @@ macOS Login
      ↓
 launchd starts service
      ↓
-examsgpt-wrapper.sh
+examsgpt-wrapper.sh (generated dynamically during install)
      ↓
 Activates venv
      ↓
@@ -100,26 +103,172 @@ Listens for '\' keypress
 Captures → OpenAI → Webhook
 ```
 
+### Dynamic Configuration
+
+**Important**: The service uses **dynamic path generation** for portability:
+
+- **`com.blueorbit.examsgpt.plist.template`**: Template with placeholders
+- **`install.sh`**: Generates plist dynamically based on project location
+- **Result**: Service works on any machine without manual path edits
+
+The plist is generated with your actual project paths during installation, so you can:
+- Move the project to any directory
+- Clone to different machines
+- Share without path conflicts
+
 ### Files
 
-- **`com.blueorbit.examsgpt.plist`**: launchd configuration
-- **`examsgpt-wrapper.sh`**: Wrapper script that sets up environment
-- **`install.sh`**: Installation script
+- **`com.blueorbit.examsgpt.plist.template`**: Template with `__PROJECT_DIR__` placeholders
+- **`examsgpt-wrapper.sh`**: Wrapper script with intelligent retry logic
+- **`install.sh`**: Installation script (generates plist dynamically)
 - **`uninstall.sh`**: Uninstallation script
 - **`start.sh`**: Start the service
 - **`stop.sh`**: Stop the service
 - **`status.sh`**: Check service status
-- **`logs.sh`**: View service logs
+- **`logs.sh`**: View service logs (includes wrapper recovery logs)
 
 ### Log Files
 
 Service logs are stored in:
 - **`logs/service.out.log`**: Standard output (application logs)
 - **`logs/service.err.log`**: Standard error (errors and warnings)
+- **`logs/wrapper.log`**: Wrapper script logs (restart attempts, recovery)
 
 These are separate from the regular ExamsGPT logs in `logs/examsGPT_*.log`.
 
+## Auto-Recovery System
+
+The service implements a **3-layer defense** for maximum reliability:
+
+### Layer 1: Application-Level Retries (main.py)
+
+**What**: Python code automatically retries transient failures
+**When**: Network timeouts, API rate limits, connection errors
+**How**: Exponential backoff (2s → 4s → 8s) for up to 3 attempts
+
+**Example**:
+```
+Connection timeout to OpenAI API
+  ↓
+Retry 1 in 2s...
+  ↓
+Retry 2 in 4s...
+  ↓
+Retry 3 in 8s...
+  ↓
+If still failing: Exit (triggers Layer 2)
+```
+
+### Layer 2: Wrapper Script Recovery (examsgpt-wrapper.sh)
+
+**What**: Bash wrapper monitors process and restarts on crashes
+**When**: Application exits with error code, unhandled exceptions
+**How**: Smart restart counting with backoff delay
+
+**Features**:
+- Tracks restarts in 5-minute rolling window
+- Exponential backoff: 5s × restart_count (max 60s)
+- Gives up after 10 crashes in 5 minutes (prevents crash loops)
+- Distinguishes clean exits (Ctrl+C) from crashes
+
+**Example**:
+```
+main.py crashes with exit code 1
+  ↓
+Wrapper logs: "Restarting in 5s (restart #1 of 10)"
+  ↓
+If crashes again: "Restarting in 10s (restart #2 of 10)"
+  ↓
+If 10+ crashes in 5 min: "CRITICAL: Too many restarts. Giving up."
+```
+
+### Layer 3: launchd KeepAlive (com.blueorbit.examsgpt.plist)
+
+**What**: macOS launchd daemon manager
+**When**: Wrapper script itself crashes or exits
+**How**: Restarts the wrapper immediately
+
+**Features**:
+- `KeepAlive` with `SuccessfulExit: false` - always restart on crashes
+- `NetworkState: true` - restart when network comes back
+- `ThrottleInterval: 5` - minimum 5 seconds between restarts
+- `OnFailure: restart` - explicit restart on any failure
+
+**Example**:
+```
+Wrapper crashes (e.g., venv activation failure)
+  ↓
+launchd: "Service died, restarting in 5s"
+  ↓
+Wrapper restarts and tries to run main.py again
+```
+
+### Recovery Flow Examples
+
+**Scenario 1: Transient Network Failure**
+```
+1. main.py tries to connect to OpenAI → timeout
+2. Layer 1: Retry with backoff (2s, 4s, 8s)
+3. If successful: Continue running
+4. If all retries fail: Exit with error code
+5. Layer 2: Wrapper catches exit, restarts in 5s
+6. Network is back: Success!
+```
+
+**Scenario 2: API Rate Limiting**
+```
+1. main.py gets HTTP 429 from OpenAI
+2. Layer 1: Recognizes "rate limit" in error message
+3. Retry with longer backoff
+4. API limit resets: Success!
+```
+
+**Scenario 3: Code Bug (Crash on Startup)**
+```
+1. main.py crashes on startup
+2. Layer 2: Wrapper catches exit, restarts in 5s
+3. Crashes again: restart in 10s
+4. ...continues for up to 10 restarts
+5. Layer 2: "Too many restarts, giving up"
+6. Wrapper exits with code 1
+7. Layer 3: launchd restarts wrapper after 5s
+8. Cycle continues until bug is fixed or manually stopped
+```
+
+### Monitoring Recovery
+
+Check wrapper logs to see recovery in action:
+
+```bash
+# View wrapper recovery logs
+cat logs/wrapper.log
+
+# Follow in real-time
+tail -f logs/wrapper.log
+```
+
+**Example output**:
+```
+[2025-01-09 10:23:45] Starting ExamsGPT (attempt 1)
+[2025-01-09 10:24:12] ERROR: ExamsGPT crashed with exit code 1
+[2025-01-09 10:24:12] Restarting in 5s (restart #1 of 10 in 300s window)
+[2025-01-09 10:24:17] Starting ExamsGPT (attempt 2)
+[2025-01-09 10:24:18] ✓ ExamsGPT running successfully
+```
+
 ## Troubleshooting
+
+### Service won't start after moving project
+
+If you moved the project to a different directory:
+
+```bash
+# The plist still has old paths - reinstall to regenerate
+./service/uninstall.sh
+./service/install.sh
+```
+
+The installer automatically detects the new project location and regenerates the plist with correct paths.
 
 ### Service won't start
 
@@ -182,6 +331,17 @@ Then reinstall:
 ```
 
 ## Advanced Configuration
+
+### Portable Installation
+
+The service is designed to be **fully portable**:
+
+1. **Clone to any location**: Works in `/Users/username/projects/`, `/opt/`, `~/Desktop/`, etc.
+2. **Move anytime**: Just reinstall after moving (see troubleshooting above)
+3. **Share with team**: No path conflicts, each install generates correct paths
+4. **Multiple machines**: Same codebase works everywhere
+
+The secret: `install.sh` uses `sed` to replace `__PROJECT_DIR__` in the template with the actual path during installation.
 
 ### Change Webhook URL
 
@@ -290,6 +450,15 @@ A: Yes, it starts automatically when you log in after reboot.
 
 **Q: How much resources does it use?**
 A: Minimal when idle. Spikes briefly when processing screenshots (~2-5 seconds).
+
+**Q: Can I move the project to another folder?**
+A: Yes! Just reinstall: `./service/uninstall.sh && ./service/install.sh`. The installer regenerates paths automatically.
+
+**Q: Will this work on another Mac?**
+A: Absolutely. The plist is generated dynamically during install, so it works on any machine without modification.
+
+**Q: Do I need to edit paths in the plist?**
+A: No! The `install.sh` script handles all path generation automatically. Just run it.
 
 ## Support
 

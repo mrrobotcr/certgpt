@@ -62,3 +62,13 @@ screenshots/*.jpg
 # ============================================
 .DS_Store
 Thumbs.db
+
+# ============================================
+# Service - Dynamically generated files
+# ============================================
+# Plist is generated from .template during install
+service/com.blueorbit.examsgpt.plist
+!service/com.blueorbit.examsgpt.plist.template
+
+# Restart history tracking
+logs/.restart_history
