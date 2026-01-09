@@ -103,6 +103,7 @@ class Config:
 - DP-900, DP-100, DP-203, DP-300 (Data & AI certifications)
 - AI-900, AI-102 (AI certifications)
 - SC-900, SC-200, SC-300 (Security certifications)
+- ANY other related Microsoft Certifications on its catalog
 
 You stay current with Azure's rapid evolution and understand that Microsoft frequently updates exam content.
 
