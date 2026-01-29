@@ -5,6 +5,7 @@ Handles image analysis using OpenAI (GPT-4o/GPT-5.2) or Gemini vision capabiliti
 
 import logging
 import base64
+import time
 from datetime import datetime
 from typing import Optional, Callable
 from PIL import Image
@@ -123,6 +124,19 @@ class AIService:
         Analyze using the new Responses API (GPT-5.x)
         Uses config for reasoning, tools, store, and include options
         """
+        # Check if debug latency is enabled (zero overhead when disabled)
+        debug_enabled = (
+            self.config.debug_latency and
+            logger.isEnabledFor(logging.DEBUG)
+        )
+
+        if debug_enabled:
+            overall_start_ns = time.perf_counter_ns()
+
+        # ===== PHASE 1: Request Setup =====
+        if debug_enabled:
+            setup_start_ns = time.perf_counter_ns()
+
         # Convert image to base64
         image_base64 = self._image_to_base64(image)
 
@@ -163,8 +177,28 @@ class AIService:
         if self.config.openai_include:
             api_params["include"] = self.config.openai_include
 
-        # Call OpenAI Responses API
-        response = self.client.responses.create(**api_params)
+        if debug_enabled:
+            setup_ns = time.perf_counter_ns() - setup_start_ns
+            network_start_ns = time.perf_counter_ns()
+
+        # ===== PHASE 2: Network Call =====
+        try:
+            response = self.client.responses.create(**api_params)
+        except Exception as e:
+            if debug_enabled:
+                network_ns = time.perf_counter_ns() - network_start_ns
+                logger.debug(
+                    f"[LATENCY] openai_responses_api | status=ERROR | "
+                    f"setup={setup_ns / 1_000_000:.2f}ms | "
+                    f"network={network_ns / 1_000_000:.2f}ms (FAILED: {type(e).__name__})"
+                )
+            raise
+
+        if debug_enabled:
+            network_ns = time.perf_counter_ns() - network_start_ns
+            parsing_start_ns = time.perf_counter_ns()
+
+        # ===== PHASE 3: Response Parsing =====
 
         # Debug: log response structure
         logger.debug(f"Response type: {type(response)}")
@@ -209,6 +243,19 @@ class AIService:
 
             raise ValueError(f"Unable to extract answer from API response: {e}")
 
+        if debug_enabled:
+            parsing_ns = time.perf_counter_ns() - parsing_start_ns
+            total_ns = time.perf_counter_ns() - overall_start_ns
+
+            logger.debug(
+                f"[LATENCY] openai_responses_api | "
+                f"setup={setup_ns / 1_000_000:.2f}ms | "
+                f"network={network_ns / 1_000_000:.2f}ms | "
+                f"parsing={parsing_ns / 1_000_000:.2f}ms | "
+                f"total={total_ns / 1_000_000:.2f}ms | "
+                f"tokens={response.usage.total_tokens if hasattr(response, 'usage') else 'N/A'}"
+            )
+
         elapsed_time = (datetime.now() - start_time).total_seconds()
 
         result = {
@@ -228,6 +275,20 @@ class AIService:
         Analyze using the new Responses API (GPT-5.x) with streaming
         Streams both reasoning and answer content via callback
         """
+        # Check if debug latency is enabled (zero overhead when disabled)
+        debug_enabled = (
+            self.config.debug_latency and
+            logger.isEnabledFor(logging.DEBUG)
+        )
+
+        if debug_enabled:
+            overall_start_ns = time.perf_counter_ns()
+            ttft_ns = None  # Time to first token
+
+        # ===== PHASE 1: Request Setup =====
+        if debug_enabled:
+            setup_start_ns = time.perf_counter_ns()
+
         # Convert image to base64
         image_base64 = self._image_to_base64(image)
 
@@ -263,11 +324,16 @@ class AIService:
         if self.config.openai_include:
             api_params["include"] = self.config.openai_include
 
+        if debug_enabled:
+            setup_ns = time.perf_counter_ns() - setup_start_ns
+            network_start_ns = time.perf_counter_ns()
+
         # Accumulate content for final result
         answer_content = []
         total_tokens = 0
 
         try:
+            # ===== PHASE 2: Network + Streaming =====
             # Create streaming response
             stream = self.client.responses.create(**api_params, stream=True)
 
@@ -275,6 +341,15 @@ class AIService:
             reasoning_content = []
             for event in stream:
                 event_count += 1
+
+                # Track TTFT on first content-bearing event
+                if debug_enabled and ttft_ns is None:
+                    if event.type in [
+                        'response.reasoning_summary_text.delta',
+                        'response.output_text.delta'
+                    ]:
+                        ttft_ns = time.perf_counter_ns() - network_start_ns
+
                 # Log every event type for debugging (at DEBUG level)
                 if event_count == 1 or event_count % 100 == 0:
                     logger.debug(f"[Stream Event #{event_count}] type: {event.type}")
@@ -330,11 +405,29 @@ class AIService:
 
             logger.debug(f"Stream iteration finished. Total events processed: {event_count}")
 
+            # ===== PHASE 3: Response Parsing =====
+            if debug_enabled:
+                parsing_start_ns = time.perf_counter_ns()
+
             # Join accumulated content
             final_answer = ''.join(answer_content).strip()
 
             if not final_answer:
                 raise ValueError("Empty response received from streaming API")
+
+            if debug_enabled:
+                parsing_ns = time.perf_counter_ns() - parsing_start_ns
+                total_ns = time.perf_counter_ns() - overall_start_ns
+                network_ns = ttft_ns if ttft_ns else (time.perf_counter_ns() - network_start_ns)
+
+                logger.debug(
+                    f"[LATENCY] openai_responses_api_streaming | "
+                    f"setup={setup_ns / 1_000_000:.2f}ms | "
+                    f"ttft={network_ns / 1_000_000:.2f}ms | "
+                    f"parsing={parsing_ns / 1_000_000:.2f}ms | "
+                    f"total={total_ns / 1_000_000:.2f}ms | "
+                    f"tokens={total_tokens}"
+                )
 
             elapsed_time = (datetime.now() - start_time).total_seconds()
 
@@ -361,36 +454,83 @@ class AIService:
         """
         Analyze using the legacy Completions API (GPT-4o and earlier)
         """
+        # Check if debug latency is enabled (zero overhead when disabled)
+        debug_enabled = (
+            self.config.debug_latency and
+            logger.isEnabledFor(logging.DEBUG)
+        )
+
+        if debug_enabled:
+            overall_start_ns = time.perf_counter_ns()
+
+        # ===== PHASE 1: Request Setup =====
+        if debug_enabled:
+            setup_start_ns = time.perf_counter_ns()
+
         # Convert image to base64
         image_base64 = self._image_to_base64(image)
 
         # Prepare Completions API parameters
-        response = self.client.chat.completions.create(
-            model=self.config.openai_model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": self.prompt_template
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{image_base64}",
-                                "detail": "high"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=self.config.openai_max_tokens,
-            temperature=self.config.openai_temperature
-        )
+        if debug_enabled:
+            setup_ns = time.perf_counter_ns() - setup_start_ns
+            network_start_ns = time.perf_counter_ns()
 
+        # ===== PHASE 2: Network Call =====
+        try:
+            response = self.client.chat.completions.create(
+                model=self.config.openai_model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": self.prompt_template
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{image_base64}",
+                                    "detail": "high"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=self.config.openai_max_tokens,
+                temperature=self.config.openai_temperature
+            )
+        except Exception as e:
+            if debug_enabled:
+                network_ns = time.perf_counter_ns() - network_start_ns
+                logger.debug(
+                    f"[LATENCY] openai_completions_api | status=ERROR | "
+                    f"setup={setup_ns / 1_000_000:.2f}ms | "
+                    f"network={network_ns / 1_000_000:.2f}ms (FAILED: {type(e).__name__})"
+                )
+            raise
+
+        if debug_enabled:
+            network_ns = time.perf_counter_ns() - network_start_ns
+            parsing_start_ns = time.perf_counter_ns()
+
+        # ===== PHASE 3: Response Parsing =====
         # Extract answer from Completions API
         answer = response.choices[0].message.content.strip()
+
+        if debug_enabled:
+            parsing_ns = time.perf_counter_ns() - parsing_start_ns
+            total_ns = time.perf_counter_ns() - overall_start_ns
+
+            logger.debug(
+                f"[LATENCY] openai_completions_api | "
+                f"setup={setup_ns / 1_000_000:.2f}ms | "
+                f"network={network_ns / 1_000_000:.2f}ms | "
+                f"parsing={parsing_ns / 1_000_000:.2f}ms | "
+                f"total={total_ns / 1_000_000:.2f}ms | "
+                f"tokens={response.usage.total_tokens if hasattr(response, 'usage') else 'N/A'}"
+            )
+
         elapsed_time = (datetime.now() - start_time).total_seconds()
 
         result = {
@@ -410,14 +550,33 @@ class AIService:
         Analyze using the legacy Completions API (GPT-4o and earlier) with streaming
         Streams answer content via callback
         """
+        # Check if debug latency is enabled (zero overhead when disabled)
+        debug_enabled = (
+            self.config.debug_latency and
+            logger.isEnabledFor(logging.DEBUG)
+        )
+
+        if debug_enabled:
+            overall_start_ns = time.perf_counter_ns()
+            ttft_ns = None  # Time to first token
+
+        # ===== PHASE 1: Request Setup =====
+        if debug_enabled:
+            setup_start_ns = time.perf_counter_ns()
+
         # Convert image to base64
         image_base64 = self._image_to_base64(image)
+
+        if debug_enabled:
+            setup_ns = time.perf_counter_ns() - setup_start_ns
+            network_start_ns = time.perf_counter_ns()
 
         # Accumulate content
         answer_chunks = []
         total_tokens = 0
 
         try:
+            # ===== PHASE 2: Network + Streaming =====
             # Create streaming response
             stream = self.client.chat.completions.create(
                 model=self.config.openai_model,
@@ -448,6 +607,10 @@ class AIService:
                 if chunk.choices:
                     delta = chunk.choices[0].delta
                     if delta.content:
+                        # Track TTFT on first content chunk
+                        if debug_enabled and ttft_ns is None:
+                            ttft_ns = time.perf_counter_ns() - network_start_ns
+
                         content = delta.content
                         answer_chunks.append(content)
 
@@ -459,11 +622,29 @@ class AIService:
                 if hasattr(chunk, 'usage') and chunk.usage:
                     total_tokens = chunk.usage.total_tokens
 
+            # ===== PHASE 3: Response Parsing =====
+            if debug_enabled:
+                parsing_start_ns = time.perf_counter_ns()
+
             # Join accumulated content
             final_answer = ''.join(answer_chunks).strip()
 
             if not final_answer:
                 raise ValueError("Empty response received from streaming API")
+
+            if debug_enabled:
+                parsing_ns = time.perf_counter_ns() - parsing_start_ns
+                total_ns = time.perf_counter_ns() - overall_start_ns
+                network_ns = ttft_ns if ttft_ns else (time.perf_counter_ns() - network_start_ns)
+
+                logger.debug(
+                    f"[LATENCY] openai_completions_api_streaming | "
+                    f"setup={setup_ns / 1_000_000:.2f}ms | "
+                    f"ttft={network_ns / 1_000_000:.2f}ms | "
+                    f"parsing={parsing_ns / 1_000_000:.2f}ms | "
+                    f"total={total_ns / 1_000_000:.2f}ms | "
+                    f"tokens={total_tokens}"
+                )
 
             elapsed_time = (datetime.now() - start_time).total_seconds()
 
@@ -514,6 +695,19 @@ class AIService:
         """
         Analyze using Gemini API with thinking and Google Search enabled
         """
+        # Check if debug latency is enabled (zero overhead when disabled)
+        debug_enabled = (
+            self.config.debug_latency and
+            logger.isEnabledFor(logging.DEBUG)
+        )
+
+        if debug_enabled:
+            overall_start_ns = time.perf_counter_ns()
+
+        # ===== PHASE 1: Request Setup =====
+        if debug_enabled:
+            setup_start_ns = time.perf_counter_ns()
+
         from google.genai import types
 
         client = _get_gemini_client()
@@ -525,13 +719,33 @@ class AIService:
             response_mime_type="application/json",
         )
 
-        # Gemini can accept PIL Image directly - no base64 conversion needed
-        response = client.models.generate_content(
-            model=self.config.gemini_model,
-            contents=[self.prompt_template, image],
-            config=config
-        )
+        if debug_enabled:
+            setup_ns = time.perf_counter_ns() - setup_start_ns
+            network_start_ns = time.perf_counter_ns()
 
+        # ===== PHASE 2: Network Call =====
+        try:
+            # Gemini can accept PIL Image directly - no base64 conversion needed
+            response = client.models.generate_content(
+                model=self.config.gemini_model,
+                contents=[self.prompt_template, image],
+                config=config
+            )
+        except Exception as e:
+            if debug_enabled:
+                network_ns = time.perf_counter_ns() - network_start_ns
+                logger.debug(
+                    f"[LATENCY] gemini_api | status=ERROR | "
+                    f"setup={setup_ns / 1_000_000:.2f}ms | "
+                    f"network={network_ns / 1_000_000:.2f}ms (FAILED: {type(e).__name__})"
+                )
+            raise
+
+        if debug_enabled:
+            network_ns = time.perf_counter_ns() - network_start_ns
+            parsing_start_ns = time.perf_counter_ns()
+
+        # ===== PHASE 3: Response Parsing =====
         # Extract answer from Gemini response (JSON guaranteed by response_mime_type)
         answer = response.text.strip() if response.text else None
 
@@ -542,6 +756,19 @@ class AIService:
         if not answer.startswith('{'):
             answer = self._clean_json_response(answer)
             logger.debug("Applied fallback JSON cleaning")
+
+        if debug_enabled:
+            parsing_ns = time.perf_counter_ns() - parsing_start_ns
+            total_ns = time.perf_counter_ns() - overall_start_ns
+
+            logger.debug(
+                f"[LATENCY] gemini_api | "
+                f"setup={setup_ns / 1_000_000:.2f}ms | "
+                f"network={network_ns / 1_000_000:.2f}ms | "
+                f"parsing={parsing_ns / 1_000_000:.2f}ms | "
+                f"total={total_ns / 1_000_000:.2f}ms | "
+                f"tokens={response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 'N/A'}"
+            )
 
         elapsed_time = (datetime.now() - start_time).total_seconds()
 

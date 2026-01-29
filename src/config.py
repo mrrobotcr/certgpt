@@ -84,6 +84,10 @@ class Config:
         self.save_to_file = self.yaml_config['logging']['save_to_file']
         self.log_dir = self.root_dir / self.yaml_config['logging']['directory']
         self.save_history = self.yaml_config['logging']['save_history']
+        # Debug latency logging options
+        self.debug_latency = self.yaml_config['logging'].get('debug_latency', False)
+        self.latency_precision = self.yaml_config['logging'].get('latency_precision', 'ms')
+        self.latency_format = self.yaml_config['logging'].get('latency_format', 'text')
 
         # Socket.IO Configuration (for future use)
         self.socketio_url = os.getenv('SOCKETIO_URL', '')

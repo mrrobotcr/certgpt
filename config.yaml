@@ -3,7 +3,7 @@
 # AI Provider Configuration
 ai:
   # Provider to use: 'openai' or 'gemini'
-  provider: 'openai'
+  provider: 'gemini'
 
 # Keyboard Configuration
 keyboard:
@@ -54,7 +54,7 @@ openai:
 # Streaming Configuration
 streaming:
   # Enable streaming responses from OpenAI (experimental)
-  enabled: true
+  enabled: false
   # Show reasoning content for GPT-5.x models
   show_reasoning: true
   # Buffer chunks before parsing (milliseconds)
@@ -72,3 +72,7 @@ logging:
   directory: 'logs'
   # Save response history
   save_history: true
+  # Debug latency logging options
+  debug_latency: false       # Enable phase breakdown latency logging (requires DEBUG level)
+  latency_precision: 'ms'    # Display precision: 'ns', 'ms', or 'both'
+  latency_format: 'text'     # Log format: 'text' or 'json' (JSON not yet implemented)
