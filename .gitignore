@@ -72,3 +72,5 @@ service/com.blueorbit.examsgpt.plist
 
 # Restart history tracking
 logs/.restart_history
+*.jsonl
+*CLAUDE.md*

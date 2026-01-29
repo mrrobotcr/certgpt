@@ -89,7 +89,7 @@ export class Broadcaster {
   /**
    * Emit streaming chunk to all connected clients
    */
-  emitStreamingChunk(data: Omit<StreamingChunkData, 'messageId'>): void {
+  emitStreamingChunk(data: StreamingChunkData): void {
     // Use current message ID - must be set by emitProcessing first
     const messageId = data.messageId || this.currentMessageId || generateMessageId()
 
@@ -112,7 +112,7 @@ export class Broadcaster {
   /**
    * Emit streaming completion to all connected clients
    */
-  emitStreamingComplete(data: Omit<StreamingCompleteData, 'messageId'>): void {
+  emitStreamingComplete(data: StreamingCompleteData): void {
     const messageId = data.messageId || this.currentMessageId || generateMessageId()
     const payload: StreamingCompleteData = { ...data, messageId }
 
