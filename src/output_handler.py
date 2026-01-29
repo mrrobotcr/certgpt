@@ -87,7 +87,7 @@ class WebhookOutput(OutputStrategy):
 
     def __init__(self, url: str):
         self.url = url
-        logger.info(f"WebhookOutput initialized with URL: {url}")
+        logger.debug(f"WebhookOutput initialized with URL: {url}")
 
     def _send_with_retry(self, payload: dict, description: str) -> bool:
         """
@@ -101,7 +101,7 @@ class WebhookOutput(OutputStrategy):
 
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
-                logger.info(f"[Attempt {attempt}/{self.MAX_RETRIES}] Sending {description} to webhook")
+                logger.debug(f"[Attempt {attempt}/{self.MAX_RETRIES}] Sending {description} to webhook")
                 response = requests.post(
                     self.url,
                     json=payload,
@@ -109,7 +109,7 @@ class WebhookOutput(OutputStrategy):
                 )
 
                 if response.status_code == 200:
-                    logger.info(f"✓ {description} delivered successfully on attempt {attempt}")
+                    logger.debug(f"✓ {description} delivered successfully on attempt {attempt}")
                     return True
                 else:
                     logger.warning(f"Webhook returned status {response.status_code}: {response.text}")
@@ -123,7 +123,7 @@ class WebhookOutput(OutputStrategy):
 
             # Wait before retry (except on last attempt)
             if attempt < self.MAX_RETRIES:
-                logger.info(f"Retrying in {backoff:.1f}s...")
+                logger.debug(f"Retrying in {backoff:.1f}s...")
                 time.sleep(backoff)
                 backoff *= 2  # Exponential backoff
 
@@ -200,7 +200,7 @@ class StreamingWebhookOutput(WebhookOutput):
             chunk: Content chunk from AI service
             content_type: Type of content ('reasoning', 'answer', 'error')
         """
-        logger.info(f"[send_streaming_chunk] Called with {len(chunk)} chars, type: {content_type}")
+        logger.debug(f"[send_streaming_chunk] Called with {len(chunk)} chars, type: {content_type}")
         try:
             import requests
 
@@ -208,7 +208,7 @@ class StreamingWebhookOutput(WebhookOutput):
             if self.message_id is None:
                 import time
                 self.message_id = f"{int(time.time() * 1000)}-{id(self)}"
-                logger.info(f"[send_streaming_chunk] Generated message_id: {self.message_id}")
+                logger.debug(f"[send_streaming_chunk] Generated message_id: {self.message_id}")
 
             payload = {
                 'type': 'streaming_chunk',
@@ -226,7 +226,7 @@ class StreamingWebhookOutput(WebhookOutput):
                     timeout=5  # Short timeout for chunks
                 )
                 if response.status_code == 200:
-                    logger.info(f"[Webhook Streaming] Chunk sent: {len(chunk)} chars, type: {content_type}")
+                    logger.debug(f"[Webhook Streaming] Chunk sent: {len(chunk)} chars, type: {content_type}")
                 else:
                     logger.warning(f"Streaming chunk failed: {response.status_code}")
             except requests.exceptions.RequestException as e:
@@ -278,8 +278,8 @@ class OutputHandler:
     def __init__(self):
         self.config = get_config()
         self.strategy = self._create_strategy()
-        logger.info(f"OutputHandler initialized with mode: {self.config.app_mode}, streaming_enabled: {self.config.streaming_enabled}")
-        logger.info(f"Strategy type: {type(self.strategy).__name__}")
+        logger.debug(f"OutputHandler initialized with mode: {self.config.app_mode}, streaming_enabled: {self.config.streaming_enabled}")
+        logger.debug(f"Strategy type: {type(self.strategy).__name__}")
 
     def _create_strategy(self) -> OutputStrategy:
         """Create appropriate output strategy based on configuration"""
@@ -391,4 +391,4 @@ class Logger:
             )
             logging.getLogger().addHandler(file_handler)
 
-        logger.info("Logging configured successfully")
+        logger.debug("Logging configured successfully")

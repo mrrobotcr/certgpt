@@ -52,7 +52,7 @@ class Config:
         self.openai_temperature = openai_config.get('temperature', 0.3)
 
         # New OpenAI Responses API options
-        self.openai_reasoning = openai_config.get('reasoning', {'effort': 'xhigh', 'summary': 'auto'})
+        self.openai_reasoning = openai_config.get('reasoning', {'effort': 'high', 'summary': 'auto'})
         self.openai_tools = openai_config.get('tools', [])
         self.openai_store = openai_config.get('store', False)
         self.openai_include = openai_config.get('include', [])

@@ -288,7 +288,7 @@ import { useSocket } from './composables/useSocket'
 import type { ParsedAnswer } from './types/events'
 
 // Socket.IO connection - replaces all SSE logic!
-const { connected, isProcessing, currentAnswer, isStreaming, streamingContent, streamingReasoning, streamingError, isSearching } = useSocket()
+const { connected, isProcessing, currentAnswer, isStreaming, streamingReasoning, streamingError, isSearching } = useSocket()
 
 // Auto-scroll for reasoning content
 const reasoningContentRef = ref<HTMLElement | null>(null)

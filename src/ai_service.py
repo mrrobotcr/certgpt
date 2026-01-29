@@ -163,24 +163,6 @@ class AIService:
         if self.config.openai_include:
             api_params["include"] = self.config.openai_include
 
-        # Log actual API params being sent (mask base64 image)
-        import json
-        import copy
-
-        # Create a copy for logging with masked image
-        log_params = copy.deepcopy(api_params)
-        for inp in log_params.get("input", []):
-            if isinstance(inp, dict) and "content" in inp:
-                for content in inp["content"]:
-                    if isinstance(content, dict) and "image_url" in content:
-                        content["image_url"] = "[BASE64_IMAGE_DATA_MASKED]"
-
-        logger.info("=" * 60)
-        logger.info("OpenAI Responses API - ACTUAL REQUEST PAYLOAD")
-        logger.info("=" * 60)
-        logger.info(json.dumps(log_params, indent=2, default=str))
-        logger.info("=" * 60)
-
         # Call OpenAI Responses API
         response = self.client.responses.create(**api_params)
 
@@ -281,22 +263,6 @@ class AIService:
         if self.config.openai_include:
             api_params["include"] = self.config.openai_include
 
-        # Log request (same as non-streaming)
-        import json
-        import copy
-        log_params = copy.deepcopy(api_params)
-        for inp in log_params.get("input", []):
-            if isinstance(inp, dict) and "content" in inp:
-                for content in inp["content"]:
-                    if isinstance(content, dict) and "image_url" in content:
-                        content["image_url"] = "[BASE64_IMAGE_DATA_MASKED]"
-
-        logger.info("=" * 60)
-        logger.info("OpenAI Responses API - STREAMING REQUEST")
-        logger.info("=" * 60)
-        logger.info(json.dumps(log_params, indent=2, default=str))
-        logger.info("=" * 60)
-
         # Accumulate content for final result
         answer_content = []
         total_tokens = 0
@@ -309,9 +275,9 @@ class AIService:
             reasoning_content = []
             for event in stream:
                 event_count += 1
-                # Log every event type for debugging
+                # Log every event type for debugging (at DEBUG level)
                 if event_count == 1 or event_count % 100 == 0:
-                    logger.info(f"[Stream Event #{event_count}] type: {event.type}")
+                    logger.debug(f"[Stream Event #{event_count}] type: {event.type}")
 
                 # Handle different event types from Responses API
 
@@ -320,23 +286,23 @@ class AIService:
                     chunk = event.delta
                     if chunk and self.config.streaming_show_reasoning:
                         reasoning_content.append(chunk)
-                        logger.info(f"[Reasoning Chunk] Received {len(chunk)} chars")
+                        logger.debug(f"[Reasoning Chunk] Received {len(chunk)} chars")
 
                         # Stream reasoning to frontend if callback provided
                         if self.streaming_callback:
                             self.streaming_callback(chunk, 'reasoning')
 
                 elif event.type == "response.reasoning_summary_text.done":
-                    logger.info(f"Reasoning completed. Total reasoning chars: {sum(len(c) for c in reasoning_content)}")
+                    logger.debug(f"Reasoning completed. Total reasoning chars: {sum(len(c) for c in reasoning_content)}")
 
                 # Web search events
                 elif event.type == "response.web_search_call.searching":
-                    logger.info("Web search in progress...")
+                    logger.debug("Web search in progress...")
                     if self.streaming_callback:
                         self.streaming_callback('searching', 'searching')
 
                 elif event.type == "response.web_search_call.done":
-                    logger.info("Web search completed")
+                    logger.debug("Web search completed")
                     if self.streaming_callback:
                         self.streaming_callback('done', 'searching')
 
@@ -345,24 +311,24 @@ class AIService:
                     chunk = event.delta
                     if chunk:
                         answer_content.append(chunk)
-                        logger.info(f"[Answer Chunk] Received {len(chunk)} chars, total buffered: {sum(len(c) for c in answer_content)}")
+                        logger.debug(f"[Answer Chunk] Received {len(chunk)} chars, total buffered: {sum(len(c) for c in answer_content)}")
 
                         # Stream to frontend if callback provided
                         if self.streaming_callback:
-                            logger.info(f"[Streaming] Calling callback with {len(chunk)} chars")
+                            logger.debug(f"[Streaming] Calling callback with {len(chunk)} chars")
                             self.streaming_callback(chunk, 'answer')
                         else:
                             logger.warning("[Streaming] Callback is None - chunk not sent to frontend!")
 
                 elif event.type == "response.output_text.done":
-                    logger.info("Output text streaming completed")
+                    logger.debug("Output text streaming completed")
 
                 elif event.type == "response.done":
                     if hasattr(event, 'response') and hasattr(event.response, 'usage'):
                         total_tokens = event.response.usage.total_tokens
-                        logger.info(f"Stream completed. Total events: {event_count}, Total tokens: {total_tokens}")
+                        logger.debug(f"Stream completed. Total events: {event_count}, Total tokens: {total_tokens}")
 
-            logger.info(f"Stream iteration finished. Total events processed: {event_count}")
+            logger.debug(f"Stream iteration finished. Total events processed: {event_count}")
 
             # Join accumulated content
             final_answer = ''.join(answer_content).strip()

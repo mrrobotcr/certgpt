@@ -36,7 +36,7 @@ openai:
   temperature: 0.3
   # Reasoning configuration
   reasoning:
-    effort: 'xhigh'
+    effort: 'high'
     summary: 'auto'
   # Tools configuration
   tools:
