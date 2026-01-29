@@ -164,6 +164,111 @@ class WebhookOutput(OutputStrategy):
             logger.error(f"Error preparing answer payload: {e}")
 
 
+class StreamingWebhookOutput(WebhookOutput):
+    """
+    Webhook output with streaming support
+    Sends chunks as they arrive from AI service
+    """
+
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.message_id = None
+
+    def send_processing(self):
+        """Send processing status to frontend via webhook (with streaming flag)"""
+        try:
+            # Generate message ID for this streaming session
+            if self.message_id is None:
+                import time
+                self.message_id = f"{int(time.time() * 1000)}-{id(self)}"
+
+            payload = {
+                'type': 'processing',
+                'timestamp': datetime.now().isoformat(),
+                'streaming': True,  # Indicate streaming mode
+                'message_id': self.message_id
+            }
+            self._send_with_retry(payload, "processing status")
+        except Exception as e:
+            logger.error(f"Error preparing processing status: {e}")
+
+    def send_streaming_chunk(self, chunk: str, content_type: str = 'answer'):
+        """
+        Send a streaming chunk to the frontend
+
+        Args:
+            chunk: Content chunk from AI service
+            content_type: Type of content ('reasoning', 'answer', 'error')
+        """
+        logger.info(f"[send_streaming_chunk] Called with {len(chunk)} chars, type: {content_type}")
+        try:
+            import requests
+
+            # Ensure we have a message ID
+            if self.message_id is None:
+                import time
+                self.message_id = f"{int(time.time() * 1000)}-{id(self)}"
+                logger.info(f"[send_streaming_chunk] Generated message_id: {self.message_id}")
+
+            payload = {
+                'type': 'streaming_chunk',
+                'content': chunk,
+                'content_type': content_type,
+                'message_id': self.message_id,
+                'timestamp': datetime.now().isoformat()
+            }
+
+            # Send without retry for streaming chunks (latency critical)
+            try:
+                response = requests.post(
+                    self.url,
+                    json=payload,
+                    timeout=5  # Short timeout for chunks
+                )
+                if response.status_code == 200:
+                    logger.info(f"[Webhook Streaming] Chunk sent: {len(chunk)} chars, type: {content_type}")
+                else:
+                    logger.warning(f"Streaming chunk failed: {response.status_code}")
+            except requests.exceptions.RequestException as e:
+                # Don't retry streaming chunks to avoid backlog
+                logger.warning(f"Failed to send streaming chunk: {e}")
+
+        except ImportError:
+            logger.error("requests library not installed")
+        except Exception as e:
+            logger.error(f"Error sending streaming chunk: {e}")
+
+    def send(self, result: dict, screenshot_path: Optional[str] = None):
+        """Send final result via streaming completion event"""
+        try:
+            import requests
+
+            payload = {
+                'type': 'streaming_complete',
+                'answer': result['answer'],
+                'timestamp': result['timestamp'],
+                'model': result.get('model'),
+                'elapsed_seconds': result.get('elapsed_seconds'),
+                'tokens_used': result.get('tokens_used'),
+                'message_id': self.message_id,
+                'success': result['success']
+            }
+
+            if not result['success']:
+                payload['error'] = result.get('error')
+
+            # Send with retry for final result
+            self._send_with_retry(payload, "streaming completion")
+
+            # Reset message ID for next request
+            self.message_id = None
+
+        except ImportError:
+            logger.error("requests library not installed")
+        except Exception as e:
+            logger.error(f"Error preparing streaming completion: {e}")
+
+
 class OutputHandler:
     """
     Main output handler that coordinates different output strategies
@@ -173,7 +278,8 @@ class OutputHandler:
     def __init__(self):
         self.config = get_config()
         self.strategy = self._create_strategy()
-        logger.info(f"OutputHandler initialized with mode: {self.config.app_mode}")
+        logger.info(f"OutputHandler initialized with mode: {self.config.app_mode}, streaming_enabled: {self.config.streaming_enabled}")
+        logger.info(f"Strategy type: {type(self.strategy).__name__}")
 
     def _create_strategy(self) -> OutputStrategy:
         """Create appropriate output strategy based on configuration"""
@@ -187,7 +293,11 @@ class OutputHandler:
                 namespace=self.config.socketio_namespace
             )
         elif mode == "webhook":
-            return WebhookOutput(url=self.config.webhook_url)
+            # Use streaming output if enabled
+            if self.config.streaming_enabled:
+                return StreamingWebhookOutput(url=self.config.webhook_url)
+            else:
+                return WebhookOutput(url=self.config.webhook_url)
         else:
             logger.warning(f"Unknown mode '{mode}', defaulting to console")
             return ConsoleOutput()
@@ -201,6 +311,15 @@ class OutputHandler:
             self.strategy.send_processing()
         except Exception as e:
             logger.error(f"Error sending processing status: {e}")
+
+    def get_streaming_callback(self):
+        """
+        Get streaming callback if strategy supports it
+        Returns callback function or None
+        """
+        if hasattr(self.strategy, 'send_streaming_chunk'):
+            return self.strategy.send_streaming_chunk
+        return None
 
     def handle_result(self, result: dict, screenshot_path: Optional[str] = None):
         """

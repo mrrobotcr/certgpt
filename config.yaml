@@ -49,8 +49,18 @@ openai:
   store: true
   # Include in response
   include:
-    - 'reasoning.encrypted_content'
     - 'web_search_call.action.sources'
+
+# Streaming Configuration
+streaming:
+  # Enable streaming responses from OpenAI (experimental)
+  enabled: true
+  # Show reasoning content for GPT-5.x models
+  show_reasoning: true
+  # Buffer chunks before parsing (milliseconds)
+  buffer_delay: 100
+  # Maximum time to wait for complete JSON (seconds)
+  json_timeout: 30
 
 # Logging Configuration
 logging:

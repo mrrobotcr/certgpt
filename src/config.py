@@ -57,6 +57,13 @@ class Config:
         self.openai_store = openai_config.get('store', False)
         self.openai_include = openai_config.get('include', [])
 
+        # Streaming Configuration
+        streaming_config = self.yaml_config.get('streaming', {})
+        self.streaming_enabled = streaming_config.get('enabled', False)
+        self.streaming_show_reasoning = streaming_config.get('show_reasoning', True)
+        self.streaming_buffer_delay = streaming_config.get('buffer_delay', 100)
+        self.streaming_json_timeout = streaming_config.get('json_timeout', 30)
+
         # Application Mode
         self.app_mode = os.getenv('APP_MODE', 'dev')
 

@@ -6,13 +6,18 @@ Handles image analysis using OpenAI (GPT-4o/GPT-5.2) or Gemini vision capabiliti
 import logging
 import base64
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable
 from PIL import Image
 from io import BytesIO
 
 from openai import OpenAI
 
 from .config import get_config
+
+
+# Streaming callback type: (content, content_type) -> None
+# content_type: 'reasoning' | 'answer' | 'error'
+StreamingCallback = Callable[[str, str], None]
 
 
 logger = logging.getLogger(__name__)
@@ -34,9 +39,10 @@ def _get_gemini_client():
 class AIService:
     """Handles communication with OpenAI or Gemini API for exam question analysis"""
 
-    def __init__(self):
+    def __init__(self, streaming_callback: Optional[StreamingCallback] = None):
         self.config = get_config()
         self.prompt_template = self.config.get_prompt_template()
+        self.streaming_callback = streaming_callback
 
         # Initialize appropriate client based on provider
         if self._uses_gemini():
@@ -46,7 +52,8 @@ class AIService:
             self.client = OpenAI(api_key=self.config.openai_api_key)
             model_name = self.config.openai_model
 
-        logger.info(f"AIService initialized with provider: {self.config.ai_provider}, model: {model_name}")
+        streaming_status = "enabled" if self.streaming_callback and self.config.streaming_enabled else "disabled"
+        logger.info(f"AIService initialized with provider: {self.config.ai_provider}, model: {model_name}, streaming: {streaming_status}")
 
     def _uses_gemini(self) -> bool:
         """Check if using Gemini provider"""
@@ -76,9 +83,20 @@ class AIService:
             provider = self.config.ai_provider
             logger.info(f"Sending screenshot to {provider} for analysis...")
 
+            # Check if streaming is enabled (OpenAI only, requires callback)
+            use_streaming = (
+                self.config.ai_provider == 'openai' and
+                self.config.streaming_enabled and
+                self.streaming_callback is not None
+            )
+
             # Route to appropriate provider/API
             if self._uses_gemini():
                 result = self._analyze_with_gemini(image, start_time)
+            elif use_streaming and self._uses_responses_api():
+                result = self._analyze_with_responses_api_streaming(image, start_time)
+            elif use_streaming and not self._uses_responses_api():
+                result = self._analyze_with_completions_api_streaming(image, start_time)
             elif self._uses_responses_api():
                 result = self._analyze_with_responses_api(image, start_time)
             else:
@@ -88,6 +106,9 @@ class AIService:
 
         except Exception as e:
             logger.error(f"Error analyzing screenshot: {e}")
+            # Send error via streaming callback if available
+            if self.streaming_callback:
+                self.streaming_callback(str(e), 'error')
             model = self.config.gemini_model if self._uses_gemini() else self.config.openai_model
             return {
                 'success': False,
@@ -220,6 +241,156 @@ class AIService:
         logger.info(f"Analysis complete in {elapsed_time:.2f}s - Tokens used: {result['tokens_used']}")
         return result
 
+    def _analyze_with_responses_api_streaming(self, image: Image.Image, start_time: datetime) -> dict:
+        """
+        Analyze using the new Responses API (GPT-5.x) with streaming
+        Streams both reasoning and answer content via callback
+        """
+        # Convert image to base64
+        image_base64 = self._image_to_base64(image)
+
+        # Build API parameters (same as non-streaming)
+        api_params = {
+            "model": self.config.openai_model,
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": self.prompt_template
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/png;base64,{image_base64}"
+                        }
+                    ]
+                }
+            ],
+            "text": {
+                "format": {"type": "text"},
+                "verbosity": "low"
+            },
+            "reasoning": self.config.openai_reasoning,
+            "store": self.config.openai_store
+        }
+
+        if self.config.openai_tools:
+            api_params["tools"] = self.config.openai_tools
+        if self.config.openai_include:
+            api_params["include"] = self.config.openai_include
+
+        # Log request (same as non-streaming)
+        import json
+        import copy
+        log_params = copy.deepcopy(api_params)
+        for inp in log_params.get("input", []):
+            if isinstance(inp, dict) and "content" in inp:
+                for content in inp["content"]:
+                    if isinstance(content, dict) and "image_url" in content:
+                        content["image_url"] = "[BASE64_IMAGE_DATA_MASKED]"
+
+        logger.info("=" * 60)
+        logger.info("OpenAI Responses API - STREAMING REQUEST")
+        logger.info("=" * 60)
+        logger.info(json.dumps(log_params, indent=2, default=str))
+        logger.info("=" * 60)
+
+        # Accumulate content for final result
+        answer_content = []
+        total_tokens = 0
+
+        try:
+            # Create streaming response
+            stream = self.client.responses.create(**api_params, stream=True)
+
+            event_count = 0
+            reasoning_content = []
+            for event in stream:
+                event_count += 1
+                # Log every event type for debugging
+                if event_count == 1 or event_count % 100 == 0:
+                    logger.info(f"[Stream Event #{event_count}] type: {event.type}")
+
+                # Handle different event types from Responses API
+
+                # Reasoning summary text (GPT-5.x extended reasoning)
+                if event.type == "response.reasoning_summary_text.delta" and hasattr(event, 'delta'):
+                    chunk = event.delta
+                    if chunk and self.config.streaming_show_reasoning:
+                        reasoning_content.append(chunk)
+                        logger.info(f"[Reasoning Chunk] Received {len(chunk)} chars")
+
+                        # Stream reasoning to frontend if callback provided
+                        if self.streaming_callback:
+                            self.streaming_callback(chunk, 'reasoning')
+
+                elif event.type == "response.reasoning_summary_text.done":
+                    logger.info(f"Reasoning completed. Total reasoning chars: {sum(len(c) for c in reasoning_content)}")
+
+                # Web search events
+                elif event.type == "response.web_search_call.searching":
+                    logger.info("Web search in progress...")
+                    if self.streaming_callback:
+                        self.streaming_callback('searching', 'searching')
+
+                elif event.type == "response.web_search_call.done":
+                    logger.info("Web search completed")
+                    if self.streaming_callback:
+                        self.streaming_callback('done', 'searching')
+
+                # Output text (final answer)
+                elif event.type == "response.output_text.delta" and hasattr(event, 'delta'):
+                    chunk = event.delta
+                    if chunk:
+                        answer_content.append(chunk)
+                        logger.info(f"[Answer Chunk] Received {len(chunk)} chars, total buffered: {sum(len(c) for c in answer_content)}")
+
+                        # Stream to frontend if callback provided
+                        if self.streaming_callback:
+                            logger.info(f"[Streaming] Calling callback with {len(chunk)} chars")
+                            self.streaming_callback(chunk, 'answer')
+                        else:
+                            logger.warning("[Streaming] Callback is None - chunk not sent to frontend!")
+
+                elif event.type == "response.output_text.done":
+                    logger.info("Output text streaming completed")
+
+                elif event.type == "response.done":
+                    if hasattr(event, 'response') and hasattr(event.response, 'usage'):
+                        total_tokens = event.response.usage.total_tokens
+                        logger.info(f"Stream completed. Total events: {event_count}, Total tokens: {total_tokens}")
+
+            logger.info(f"Stream iteration finished. Total events processed: {event_count}")
+
+            # Join accumulated content
+            final_answer = ''.join(answer_content).strip()
+
+            if not final_answer:
+                raise ValueError("Empty response received from streaming API")
+
+            elapsed_time = (datetime.now() - start_time).total_seconds()
+
+            result = {
+                'success': True,
+                'answer': final_answer,
+                'model': self.config.openai_model,
+                'timestamp': datetime.now().isoformat(),
+                'elapsed_seconds': elapsed_time,
+                'tokens_used': total_tokens
+            }
+
+            logger.info(f"Streaming analysis complete in {elapsed_time:.2f}s - Tokens used: {total_tokens}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in streaming analysis: {e}")
+            # Send error via callback
+            if self.streaming_callback:
+                self.streaming_callback(str(e), 'error')
+            raise
+
     def _analyze_with_completions_api(self, image: Image.Image, start_time: datetime) -> dict:
         """
         Analyze using the legacy Completions API (GPT-4o and earlier)
@@ -267,6 +438,87 @@ class AIService:
 
         logger.info(f"Analysis complete in {elapsed_time:.2f}s - Tokens used: {result['tokens_used']}")
         return result
+
+    def _analyze_with_completions_api_streaming(self, image: Image.Image, start_time: datetime) -> dict:
+        """
+        Analyze using the legacy Completions API (GPT-4o and earlier) with streaming
+        Streams answer content via callback
+        """
+        # Convert image to base64
+        image_base64 = self._image_to_base64(image)
+
+        # Accumulate content
+        answer_chunks = []
+        total_tokens = 0
+
+        try:
+            # Create streaming response
+            stream = self.client.chat.completions.create(
+                model=self.config.openai_model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": self.prompt_template
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{image_base64}",
+                                    "detail": "high"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=self.config.openai_max_tokens,
+                temperature=self.config.openai_temperature,
+                stream=True
+            )
+
+            for chunk in stream:
+                if chunk.choices:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        content = delta.content
+                        answer_chunks.append(content)
+
+                        # Stream to frontend if callback provided
+                        if self.streaming_callback:
+                            self.streaming_callback(content, 'answer')
+
+                # Track usage from final chunk
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    total_tokens = chunk.usage.total_tokens
+
+            # Join accumulated content
+            final_answer = ''.join(answer_chunks).strip()
+
+            if not final_answer:
+                raise ValueError("Empty response received from streaming API")
+
+            elapsed_time = (datetime.now() - start_time).total_seconds()
+
+            result = {
+                'success': True,
+                'answer': final_answer,
+                'model': self.config.openai_model,
+                'timestamp': datetime.now().isoformat(),
+                'elapsed_seconds': elapsed_time,
+                'tokens_used': total_tokens
+            }
+
+            logger.info(f"Streaming analysis complete in {elapsed_time:.2f}s - Tokens used: {total_tokens}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in streaming analysis: {e}")
+            # Send error via callback
+            if self.streaming_callback:
+                self.streaming_callback(str(e), 'error')
+            raise
 
     def _clean_json_response(self, text: str) -> str:
         """

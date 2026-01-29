@@ -93,11 +93,19 @@ class ExamsGPT:
         logger.info(f"Model: {self.config.openai_model}")
         logger.info(f"Trigger Key: {self.config.trigger_key}")
         logger.info(f"Middle Mouse Button: {'enabled' if self.config.enable_middle_button else 'disabled'}")
+        logger.info(f"Streaming: {'enabled' if self.config.streaming_enabled else 'disabled'}")
         logger.info("=" * 70)
 
-        # Initialize services
-        self.ai_service = AIService()
+        # Initialize output handler first (needed for streaming callback)
         self.output_handler = OutputHandler()
+
+        # Get streaming callback if available
+        streaming_callback = self.output_handler.get_streaming_callback()
+
+        # Initialize AI service with streaming callback
+        self.ai_service = AIService(streaming_callback=streaming_callback)
+
+        # Initialize capture manager
         self.capture_manager = CaptureManager(
             on_screenshot_callback=self.handle_screenshot
         )

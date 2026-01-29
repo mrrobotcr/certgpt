@@ -17,9 +17,30 @@ export interface ProcessingData {
   type: 'processing'
   timestamp: string
   messageId?: string
+  streaming?: boolean
 }
 
-export type EventData = AnswerData | ProcessingData
+export interface StreamingChunkData {
+  type: 'streaming_chunk'
+  content: string
+  content_type: 'reasoning' | 'answer' | 'error'
+  timestamp: string
+  messageId?: string
+}
+
+export interface StreamingCompleteData {
+  type: 'streaming_complete'
+  answer: string
+  timestamp: string
+  model?: string
+  elapsed_seconds?: number
+  tokens_used?: number
+  messageId?: string
+  success: boolean
+  error?: string
+}
+
+export type EventData = AnswerData | ProcessingData | StreamingChunkData | StreamingCompleteData
 
 function generateMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
@@ -29,7 +50,7 @@ export class Broadcaster {
   private io: Server
   private latestAnswer: AnswerData | null = null
   private isProcessing: boolean = false
-  private lastMessageId: string | null = null
+  private currentMessageId: string | null = null  // Renamed for clarity
 
   constructor(io: Server) {
     this.io = io
@@ -41,7 +62,7 @@ export class Broadcaster {
   emitProcessing(data: Omit<ProcessingData, 'messageId'>): void {
     const messageId = generateMessageId()
     this.isProcessing = true
-    this.lastMessageId = messageId
+    this.currentMessageId = messageId
 
     const payload: ProcessingData = { ...data, messageId }
     this.io.emit('processing', payload)
@@ -58,11 +79,59 @@ export class Broadcaster {
 
     this.latestAnswer = payload
     this.isProcessing = false
-    this.lastMessageId = messageId
+    this.currentMessageId = null
 
     this.io.emit('answer', payload)
 
     console.log(`[Broadcaster] Answer emitted [${messageId}]: ${data.answer.substring(0, 50)}... Connected clients: ${this.io.sockets.sockets.size}`)
+  }
+
+  /**
+   * Emit streaming chunk to all connected clients
+   */
+  emitStreamingChunk(data: Omit<StreamingChunkData, 'messageId'>): void {
+    // Use current message ID - must be set by emitProcessing first
+    const messageId = data.messageId || this.currentMessageId || generateMessageId()
+
+    // Update current message ID if this is a new streaming session
+    if (!this.currentMessageId && data.messageId) {
+      this.currentMessageId = data.messageId
+    }
+
+    const payload: StreamingChunkData = {
+      ...data,
+      messageId
+    }
+
+    this.io.emit('streaming_chunk', payload)
+
+    const contentPreview = data.content.length > 30 ? data.content.substring(0, 30) + '...' : data.content
+    console.log(`[Broadcaster] Streaming chunk emitted [${messageId}]: ${data.content_type} - ${contentPreview}`)
+  }
+
+  /**
+   * Emit streaming completion to all connected clients
+   */
+  emitStreamingComplete(data: Omit<StreamingCompleteData, 'messageId'>): void {
+    const messageId = data.messageId || this.currentMessageId || generateMessageId()
+    const payload: StreamingCompleteData = { ...data, messageId }
+
+    if (data.success && data.answer) {
+      this.latestAnswer = {
+        type: 'answer',
+        answer: data.answer,
+        timestamp: data.timestamp,
+        model: data.model,
+        messageId: messageId
+      }
+    }
+
+    this.isProcessing = false
+    this.currentMessageId = null  // Reset for next request
+
+    this.io.emit('streaming_complete', payload)
+
+    console.log(`[Broadcaster] Streaming complete emitted [${messageId}]: ${data.success ? 'Success' : 'Error'}`)
   }
 
   /**
@@ -74,7 +143,7 @@ export class Broadcaster {
       socket.emit('processing', {
         type: 'processing',
         timestamp: new Date().toISOString(),
-        messageId: this.lastMessageId
+        messageId: this.currentMessageId
       })
       console.log(`[Broadcaster] Sent processing state to ${socket.id}`)
     }
@@ -92,7 +161,7 @@ export class Broadcaster {
   getState() {
     return {
       isProcessing: this.isProcessing,
-      lastMessageId: this.lastMessageId,
+      currentMessageId: this.currentMessageId,
       latestAnswer: this.latestAnswer
     }
   }

@@ -14,9 +14,30 @@ export interface ProcessingData {
   type: 'processing'
   timestamp: string
   messageId?: string
+  streaming?: boolean
 }
 
-export type EventData = AnswerData | ProcessingData
+export interface StreamingChunkData {
+  type: 'streaming_chunk'
+  content: string
+  content_type: 'reasoning' | 'answer' | 'error' | 'searching'
+  timestamp: string
+  messageId?: string
+}
+
+export interface StreamingCompleteData {
+  type: 'streaming_complete'
+  answer: string
+  timestamp: string
+  model?: string
+  elapsed_seconds?: number
+  tokens_used?: number
+  messageId?: string
+  success: boolean
+  error?: string
+}
+
+export type EventData = AnswerData | ProcessingData | StreamingChunkData | StreamingCompleteData
 
 // Parsed answer structures for different question types
 export interface SingleChoiceAnswer {

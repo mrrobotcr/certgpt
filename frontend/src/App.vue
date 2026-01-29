@@ -14,7 +14,7 @@
 
     <!-- Main Content -->
     <main class="main">
-      <!-- Processing State -->
+      <!-- Processing State (hides previous answer) -->
       <div v-if="isProcessing" class="processing">
         <div class="processing-animation">
           <div class="scan-line"></div>
@@ -23,6 +23,33 @@
         <p class="processing-text">ANALYZING QUESTION</p>
         <div class="processing-dots">
           <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <!-- Streaming State -->
+      <div v-else-if="isStreaming" class="streaming">
+        <!-- Reasoning Display -->
+        <div v-if="streamingReasoning" class="streaming-reasoning">
+          <div class="reasoning-header">
+            <div class="reasoning-title">
+              <span class="reasoning-icon">💭</span>
+              <span class="reasoning-label">AI REASONING</span>
+            </div>
+            <!-- Web Search Indicator -->
+            <div v-if="isSearching" class="search-indicator">
+              <span class="search-icon">🌐</span>
+              <span class="search-text">Searching web...</span>
+              <div class="search-spinner"></div>
+            </div>
+            <div class="reasoning-pulse"></div>
+          </div>
+          <div ref="reasoningContentRef" class="reasoning-content">{{ streamingReasoning }}</div>
+        </div>
+
+        <!-- Error Display (if any) -->
+        <div v-if="streamingError" class="streaming-error">
+          <span class="error-icon">⚠️</span>
+          <p>{{ streamingError }}</p>
         </div>
       </div>
 
@@ -256,12 +283,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { useSocket } from './composables/useSocket'
 import type { ParsedAnswer } from './types/events'
 
 // Socket.IO connection - replaces all SSE logic!
-const { connected, isProcessing, currentAnswer } = useSocket()
+const { connected, isProcessing, currentAnswer, isStreaming, streamingContent, streamingReasoning, streamingError, isSearching } = useSocket()
+
+// Auto-scroll for reasoning content
+const reasoningContentRef = ref<HTMLElement | null>(null)
+
+// Watch for reasoning updates and auto-scroll
+watch(streamingReasoning, async () => {
+  await nextTick()
+  if (reasoningContentRef.value) {
+    reasoningContentRef.value.scrollTop = reasoningContentRef.value.scrollHeight
+  }
+})
 
 // Fallback answer type for unparseable JSON
 interface FallbackAnswer {
@@ -578,6 +616,216 @@ const formatSourceUrl = (url: string) => {
 @keyframes dotPulse {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
   40% { transform: scale(1); opacity: 1; }
+}
+
+/* Streaming State */
+.streaming {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Reasoning Section - Redesigned */
+.streaming-reasoning {
+  background: linear-gradient(135deg, rgba(67, 97, 238, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%);
+  border: 1px solid rgba(67, 97, 238, 0.25);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  max-height: 400px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow:
+    0 0 0 1px rgba(67, 97, 238, 0.1),
+    0 4px 24px rgba(67, 97, 238, 0.15);
+  animation: reasoningSlideIn 0.4s ease-out;
+}
+
+@keyframes reasoningSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reasoning-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  background: rgba(67, 97, 238, 0.12);
+  border-bottom: 1px solid rgba(67, 97, 238, 0.2);
+}
+
+.reasoning-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reasoning-icon {
+  font-size: 1.125rem;
+  filter: drop-shadow(0 0 8px rgba(67, 97, 238, 0.5));
+  animation: iconFloat 2s ease-in-out infinite;
+}
+
+@keyframes iconFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.05); }
+}
+
+.reasoning-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #818cf8;
+  text-shadow: 0 0 20px rgba(129, 140, 248, 0.5);
+}
+
+.reasoning-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #818cf8;
+  box-shadow: 0 0 12px rgba(129, 140, 248, 0.8);
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 12px rgba(129, 140, 248, 0.8);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.3);
+    box-shadow: 0 0 20px rgba(129, 140, 248, 1);
+  }
+}
+
+/* Web Search Indicator - Enhanced */
+.search-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  color: #4ade80;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.2);
+  animation: searchPulse 2s ease-in-out infinite;
+}
+
+@keyframes searchPulse {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(34, 197, 94, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+  }
+}
+
+.search-indicator .search-icon {
+  font-size: 0.875rem;
+  animation: searchBounce 1.5s ease-in-out infinite;
+}
+
+@keyframes searchBounce {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-3px) rotate(-5deg); }
+  75% { transform: translateY(-1px) rotate(5deg); }
+}
+
+.search-text {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.6875rem;
+  letter-spacing: 0.05em;
+}
+
+.search-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(74, 222, 128, 0.3);
+  border-top-color: #4ade80;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Reasoning Content - Enhanced */
+.reasoning-content {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: #a5b4fc;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 1rem;
+  scroll-behavior: smooth;
+  background: rgba(15, 23, 42, 0.3);
+}
+
+/* Custom scrollbar for reasoning content */
+.reasoning-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.reasoning-content::-webkit-scrollbar-track {
+  background: rgba(67, 97, 238, 0.05);
+  border-radius: 3px;
+}
+
+.reasoning-content::-webkit-scrollbar-thumb {
+  background: rgba(67, 97, 238, 0.4);
+  border-radius: 3px;
+}
+
+.reasoning-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(67, 97, 238, 0.6);
+}
+
+/* Streaming Error */
+.streaming-error {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  color: #fca5a5;
+}
+
+.streaming-error .error-icon {
+  font-size: 1.25rem;
+}
+
+.streaming-error p {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
 }
 
 /* Waiting State */
