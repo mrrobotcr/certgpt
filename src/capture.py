@@ -55,17 +55,53 @@ class ScreenCapture:
     def _save_screenshot(self, img: Image.Image) -> str:
         """Save screenshot to disk with timestamp"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        filename = f"exam_{timestamp}.{self.config.screenshot_format}"
+        ext = 'jpg' if self.config.screenshot_format == 'jpeg' else 'png'
+        filename = f"exam_{timestamp}.{ext}"
         filepath = self.config.screenshot_dir / filename
 
-        img.save(filepath, self.config.screenshot_format.upper())
+        # Apply format-specific settings
+        if self.config.screenshot_format == 'jpeg':
+            # Convert to RGB (JPEG doesn't support transparency)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            # Optional resize for large screens
+            if self.config.screenshot_max_width or self.config.screenshot_max_height:
+                img = self._resize_if_needed(img)
+            img.save(filepath, format='JPEG', quality=self.config.screenshot_jpeg_quality)
+        else:
+            img.save(filepath, format='PNG')
+
         logger.debug(f"Screenshot saved to: {filepath}")
         return str(filepath)
+
+    def _resize_if_needed(self, img: Image.Image) -> Image.Image:
+        """Resize image if exceeds max dimensions while maintaining aspect ratio"""
+        max_w = self.config.screenshot_max_width or img.width
+        max_h = self.config.screenshot_max_height or img.height
+
+        if img.width <= max_w and img.height <= max_h:
+            return img
+
+        # Calculate maintaining aspect ratio
+        ratio = min(max_w / img.width, max_h / img.height)
+        new_size = (int(img.width * ratio), int(img.height * ratio))
+        return img.resize(new_size, Image.LANCZOS)  # High-quality resampling
 
     def image_to_bytes(self, img: Image.Image) -> bytes:
         """Convert PIL Image to bytes for API transmission"""
         buffer = BytesIO()
-        img.save(buffer, format='PNG')
+
+        # Use JPEG format for smaller payloads if configured
+        save_format = 'JPEG' if self.config.screenshot_format == 'jpeg' else 'PNG'
+
+        if save_format == 'JPEG':
+            # Convert to RGB if necessary (JPEG doesn't support transparency)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img.save(buffer, format='JPEG', quality=self.config.screenshot_jpeg_quality)
+        else:
+            img.save(buffer, format='PNG')
+
         return buffer.getvalue()
 
 

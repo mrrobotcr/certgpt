@@ -804,7 +804,14 @@ class AIService:
         if image.mode != 'RGB':
             image = image.convert('RGB')
 
-        image.save(buffer, format='PNG')
+        # Use JPEG format for smaller payloads if configured
+        save_format = 'JPEG' if self.config.screenshot_format == 'jpeg' else 'PNG'
+
+        if save_format == 'JPEG':
+            image.save(buffer, format='JPEG', quality=self.config.screenshot_jpeg_quality)
+        else:
+            image.save(buffer, format='PNG')
+
         image_bytes = buffer.getvalue()
         return base64.b64encode(image_bytes).decode('utf-8')
 
