@@ -24,7 +24,7 @@ screenshot:
   # Screenshot directory
   directory: 'screenshots'
   # Image format: 'png', 'jpeg', or 'webp'
-  format: 'jpeg'
+  format: 'webp'
   # JPEG quality (1-100, 75-85 recommended for text readability)
   jpeg_quality: 70
   # WebP quality (0-100, 70-80 recommended for text readability)

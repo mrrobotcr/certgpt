@@ -74,3 +74,4 @@ service/com.blueorbit.examsgpt.plist
 logs/.restart_history
 *.jsonl
 *CLAUDE.md*
+*.webp
