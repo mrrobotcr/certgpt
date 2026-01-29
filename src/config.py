@@ -79,6 +79,7 @@ class Config:
         self.screenshot_dir = self.root_dir / self.yaml_config['screenshot']['directory']
         self.screenshot_format = self.yaml_config['screenshot']['format']
         self.screenshot_jpeg_quality = self.yaml_config['screenshot'].get('jpeg_quality', 80)
+        self.screenshot_webp_quality = self.yaml_config['screenshot'].get('webp_quality', 75)
         self.screenshot_max_width = self.yaml_config['screenshot'].get('max_width', None)
         self.screenshot_max_height = self.yaml_config['screenshot'].get('max_height', None)
 

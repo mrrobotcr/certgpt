@@ -23,10 +23,12 @@ screenshot:
   save_screenshots: true
   # Screenshot directory
   directory: 'screenshots'
-  # Image format: 'png' or 'jpeg'
+  # Image format: 'png', 'jpeg', or 'webp'
   format: 'jpeg'
   # JPEG quality (1-100, 75-85 recommended for text readability)
-  jpeg_quality: 80
+  jpeg_quality: 70
+  # WebP quality (0-100, 70-80 recommended for text readability)
+  webp_quality: 75
   # Optional resize for large screens (set to null to disable)
   max_width: 1920
   max_height: 1080

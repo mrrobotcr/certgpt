@@ -55,7 +55,9 @@ class ScreenCapture:
     def _save_screenshot(self, img: Image.Image) -> str:
         """Save screenshot to disk with timestamp"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        ext = 'jpg' if self.config.screenshot_format == 'jpeg' else 'png'
+        # Map format to file extension
+        ext_map = {'jpeg': 'jpg', 'webp': 'webp', 'png': 'png'}
+        ext = ext_map.get(self.config.screenshot_format, 'png')
         filename = f"exam_{timestamp}.{ext}"
         filepath = self.config.screenshot_dir / filename
 
@@ -68,6 +70,14 @@ class ScreenCapture:
             if self.config.screenshot_max_width or self.config.screenshot_max_height:
                 img = self._resize_if_needed(img)
             img.save(filepath, format='JPEG', quality=self.config.screenshot_jpeg_quality)
+        elif self.config.screenshot_format == 'webp':
+            # Convert to RGB (WebP doesn't support transparency in basic mode)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            # Optional resize for large screens
+            if self.config.screenshot_max_width or self.config.screenshot_max_height:
+                img = self._resize_if_needed(img)
+            img.save(filepath, format='WEBP', quality=self.config.screenshot_webp_quality, method=6)
         else:
             img.save(filepath, format='PNG')
 
@@ -91,14 +101,27 @@ class ScreenCapture:
         """Convert PIL Image to bytes for API transmission"""
         buffer = BytesIO()
 
-        # Use JPEG format for smaller payloads if configured
-        save_format = 'JPEG' if self.config.screenshot_format == 'jpeg' else 'PNG'
+        # Determine format based on configuration
+        if self.config.screenshot_format == 'jpeg':
+            save_format = 'JPEG'
+            quality = self.config.screenshot_jpeg_quality
+        elif self.config.screenshot_format == 'webp':
+            save_format = 'WEBP'
+            quality = self.config.screenshot_webp_quality
+        else:
+            save_format = 'PNG'
+            quality = None
 
         if save_format == 'JPEG':
             # Convert to RGB if necessary (JPEG doesn't support transparency)
             if img.mode != 'RGB':
                 img = img.convert('RGB')
-            img.save(buffer, format='JPEG', quality=self.config.screenshot_jpeg_quality)
+            img.save(buffer, format='JPEG', quality=quality)
+        elif save_format == 'WEBP':
+            # Convert to RGB if necessary (WebP doesn't support transparency in basic mode)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img.save(buffer, format='WEBP', quality=quality, method=6)
         else:
             img.save(buffer, format='PNG')
 

@@ -804,11 +804,21 @@ class AIService:
         if image.mode != 'RGB':
             image = image.convert('RGB')
 
-        # Use JPEG format for smaller payloads if configured
-        save_format = 'JPEG' if self.config.screenshot_format == 'jpeg' else 'PNG'
+        # Determine format based on configuration
+        if self.config.screenshot_format == 'jpeg':
+            save_format = 'JPEG'
+            quality = self.config.screenshot_jpeg_quality
+        elif self.config.screenshot_format == 'webp':
+            save_format = 'WEBP'
+            quality = self.config.screenshot_webp_quality
+        else:
+            save_format = 'PNG'
+            quality = None
 
         if save_format == 'JPEG':
-            image.save(buffer, format='JPEG', quality=self.config.screenshot_jpeg_quality)
+            image.save(buffer, format='JPEG', quality=quality)
+        elif save_format == 'WEBP':
+            image.save(buffer, format='WEBP', quality=quality, method=6)
         else:
             image.save(buffer, format='PNG')
 
