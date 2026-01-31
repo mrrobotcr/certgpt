@@ -5,7 +5,7 @@
 
 import { ref, onMounted, onUnmounted } from 'vue'
 import { io, Socket } from 'socket.io-client'
-import type { AnswerData, ProcessingData, StreamingChunkData, StreamingCompleteData } from '../types/events'
+import type { AnswerData, ProcessingData, StreamingChunkData, StreamingCompleteData, QueueStatusData } from '../types/events'
 
 const PROCESSING_TIMEOUT_MS = 120000 // 2 minutes
 
@@ -21,6 +21,9 @@ export function useSocket() {
   const streamingError = ref<string>('')
   const currentMessageId = ref<string | null>(null)
   const isSearching = ref(false)  // Web search indicator
+
+  // Queue state
+  const queueSize = ref<number>(0)
 
   let socket: Socket | null = null
   let processingTimeout: ReturnType<typeof setTimeout> | null = null
@@ -192,6 +195,12 @@ export function useSocket() {
       isProcessing.value = false
       clearProcessingTimeout()
     })
+
+    // Queue status handler
+    socket.on('queue_status', (data: QueueStatusData) => {
+      console.log('[Socket.IO] Queue status:', data.queue_size)
+      queueSize.value = data.queue_size
+    })
   }
 
   const disconnect = () => {
@@ -220,6 +229,8 @@ export function useSocket() {
     streamingContent,
     streamingReasoning,
     streamingError,
-    isSearching
+    isSearching,
+    // Queue state
+    queueSize
   }
 }

@@ -9,6 +9,7 @@ import sys
 import signal
 import logging
 import time
+from datetime import datetime
 from typing import Optional
 from PIL import Image
 
@@ -16,6 +17,7 @@ from src.config import init_config
 from src.capture import CaptureManager
 from src.ai_service import AIService
 from src.output_handler import OutputHandler, Logger
+from src.screenshot_queue import ScreenshotQueue
 
 
 logger = logging.getLogger(__name__)
@@ -92,9 +94,14 @@ class ExamsGPT:
         logger.info(f"Mode: {self.config.app_mode}")
         logger.info(f"Model: {self.config.openai_model}")
         logger.info(f"Trigger Key: {self.config.trigger_key}")
+        logger.info(f"Queue Key: {self.config.queue_key}")
+        logger.info(f"Send Key: {self.config.send_key}")
         logger.info(f"Middle Mouse Button: {'enabled' if self.config.enable_middle_button else 'disabled'}")
         logger.info(f"Streaming: {'enabled' if self.config.streaming_enabled else 'disabled'}")
         logger.info("=" * 70)
+
+        # NEW: Create screenshot queue
+        self.screenshot_queue = ScreenshotQueue()
 
         # Initialize output handler first (needed for streaming callback)
         self.output_handler = OutputHandler()
@@ -105,9 +112,11 @@ class ExamsGPT:
         # Initialize AI service with streaming callback
         self.ai_service = AIService(streaming_callback=streaming_callback)
 
-        # Initialize capture manager
+        # NEW: Initialize capture manager with queue callbacks
         self.capture_manager = CaptureManager(
-            on_screenshot_callback=self.handle_screenshot
+            on_screenshot_callback=self.handle_screenshot,
+            on_queue_add_callback=self.handle_queue_add,
+            on_queue_send_callback=self.handle_queue_send
         )
 
         # Flag for graceful shutdown
@@ -136,6 +145,47 @@ class ExamsGPT:
         except Exception as e:
             logger.error(f"Error processing screenshot: {e}")
 
+    def handle_queue_add(self, image: Image.Image, screenshot_path: Optional[str]):
+        """Handle adding screenshot to queue"""
+        try:
+            size = self.screenshot_queue.add(image, screenshot_path)
+            self.output_handler.send_queue_status(size)
+            logger.info(f"Screenshot added to queue. Size: {size}")
+
+        except Exception as e:
+            logger.error(f"Error adding to queue: {e}")
+
+    def handle_queue_send(self):
+        """Handle sending queued screenshots"""
+        try:
+            screenshots = self.screenshot_queue.get_all()
+
+            if not screenshots:
+                logger.warning("Send triggered but queue is empty")
+                self.output_handler.send_queue_status(0)
+                return
+
+            # Reset UI queue status
+            self.output_handler.send_queue_status(0)
+
+            # Notify processing
+            self.output_handler.send_processing()
+
+            # Analyze with AI
+            result = self.ai_service.analyze_multi_screenshots(screenshots)
+
+            # Handle output
+            first_path = screenshots[0][1] if screenshots and screenshots[0] else None
+            self.output_handler.handle_result(result, first_path)
+
+        except Exception as e:
+            logger.error(f"Error processing queue: {e}")
+            self.output_handler.handle_result({
+                'success': False,
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            })
+
     def start(self):
         """Start the application"""
         try:
@@ -159,7 +209,11 @@ class ExamsGPT:
             print("=" * 70)
             print("ExamsGPT is running!")
             print("=" * 70)
-            print(f"Press '{self.config.trigger_key}' to capture and analyze exam question")
+            print(f"Press '{self.config.trigger_key}' to capture and analyze (single)")
+            if self.config.queue_key:
+                print(f"Press '{self.config.queue_key}' to add to queue")
+            if self.config.send_key:
+                print(f"Press '{self.config.send_key}' to send queue for analysis")
             if self.config.enable_middle_button:
                 print("Or click the middle mouse button (scroll wheel)")
             print("Press Ctrl+C to stop")
@@ -170,8 +224,12 @@ class ExamsGPT:
             signal.signal(signal.SIGINT, self._signal_handler)
             signal.signal(signal.SIGTERM, self._signal_handler)
 
-            # Block main thread
-            signal.pause()
+            # Block main thread - use sleep loop instead of signal.pause() for macOS compatibility
+            while self.running:
+                try:
+                    time.sleep(1)
+                except KeyboardInterrupt:
+                    break
 
         except KeyboardInterrupt:
             self.stop()
@@ -190,8 +248,8 @@ class ExamsGPT:
 
     def _signal_handler(self, signum, frame):
         """Handle termination signals"""
+        self.running = False
         self.stop()
-        sys.exit(0)
 
 
 def main():

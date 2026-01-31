@@ -69,6 +69,8 @@ class Config:
 
         # Keyboard Configuration
         self.trigger_key = self.yaml_config['keyboard']['trigger_key']
+        self.queue_key = self.yaml_config['keyboard'].get('queue_key', None)
+        self.send_key = self.yaml_config['keyboard'].get('send_key', None)
 
         # Mouse Configuration
         mouse_config = self.yaml_config.get('mouse', {})

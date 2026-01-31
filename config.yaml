@@ -11,6 +11,10 @@ keyboard:
   # Options: any single key like \, /, f12, etc.
   # Or combinations like ctrl+\, cmd+\, alt+\
   trigger_key: '='
+  # Key to add screenshot to queue (for multi-screenshot analysis)
+  queue_key: '-'
+  # Key to send queued screenshots for analysis
+  send_key: '0'
 
 # Mouse Configuration
 mouse:
@@ -61,7 +65,7 @@ openai:
 # Streaming Configuration
 streaming:
   # Enable streaming responses from OpenAI (experimental)
-  enabled: false
+  enabled: true
   # Show reasoning content for GPT-5.x models
   show_reasoning: true
   # Buffer chunks before parsing (milliseconds)

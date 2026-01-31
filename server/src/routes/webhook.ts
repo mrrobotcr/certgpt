@@ -20,7 +20,7 @@ declare global {
 }
 
 interface WebhookBody {
-  type?: 'answer' | 'processing' | 'streaming_chunk' | 'streaming_complete'
+  type?: 'answer' | 'processing' | 'streaming_chunk' | 'streaming_complete' | 'queue_status'
   answer?: string
   timestamp?: string
   model?: string
@@ -32,6 +32,7 @@ interface WebhookBody {
   success?: boolean
   error?: string
   streaming?: boolean
+  queue_size?: number
 }
 
 router.post('/webhook', (req: Request, res: Response) => {
@@ -54,6 +55,21 @@ router.post('/webhook', (req: Request, res: Response) => {
       res.json({
         success: true,
         message: 'Processing status broadcasted'
+      })
+      return
+    }
+
+    // Handle queue status event
+    if (eventType === 'queue_status') {
+      broadcaster.emitQueueStatus({
+        type: 'queue_status',
+        queue_size: body.queue_size ?? 0,
+        timestamp: body.timestamp || new Date().toISOString()
+      })
+
+      res.json({
+        success: true,
+        message: 'Queue status broadcasted'
       })
       return
     }

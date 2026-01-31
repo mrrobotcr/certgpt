@@ -28,6 +28,10 @@ class OutputStrategy(ABC):
         """Send processing status (optional, not all strategies support this)"""
         pass
 
+    def send_queue_status(self, queue_size: int):
+        """Send queue status (optional, not all strategies support this)"""
+        pass
+
 
 class ConsoleOutput(OutputStrategy):
     """Output to console (for development)"""
@@ -35,6 +39,13 @@ class ConsoleOutput(OutputStrategy):
     def send_processing(self):
         """Print processing status to console"""
         print("\n⏳ Processing screenshot with AI...")
+
+    def send_queue_status(self, queue_size: int):
+        """Print queue status to console"""
+        if queue_size > 0:
+            print(f"\n📸 Queue: {queue_size} screenshot(s) queued")
+        else:
+            print(f"\n✓ Queue cleared")
 
     def send(self, result: dict, screenshot_path: Optional[str] = None):
         """Print result to console with nice formatting"""
@@ -74,6 +85,11 @@ class SocketIOOutput(OutputStrategy):
         logger.warning("SocketIOOutput.send() called but not implemented yet")
         # Future implementation:
         # self.socketio.emit('exam_answer', result, namespace=self.namespace)
+
+    def send_queue_status(self, queue_size: int):
+        """Send queue status via Socket.IO (if implemented)"""
+        # Future: self.socketio.emit('queue_status', {'queue_size': queue_size})
+        logger.debug(f"SocketIO queue status not implemented: {queue_size}")
 
 
 class WebhookOutput(OutputStrategy):
@@ -162,6 +178,18 @@ class WebhookOutput(OutputStrategy):
             logger.error("requests library not installed. Run: pip install requests")
         except Exception as e:
             logger.error(f"Error preparing answer payload: {e}")
+
+    def send_queue_status(self, queue_size: int):
+        """Send current queue count to frontend"""
+        try:
+            payload = {
+                'type': 'queue_status',
+                'queue_size': queue_size,
+                'timestamp': datetime.now().isoformat()
+            }
+            self._send_with_retry(payload, "queue status")
+        except Exception as e:
+            logger.error(f"Error sending queue status: {e}")
 
 
 class StreamingWebhookOutput(WebhookOutput):
@@ -268,6 +296,11 @@ class StreamingWebhookOutput(WebhookOutput):
         except Exception as e:
             logger.error(f"Error preparing streaming completion: {e}")
 
+    def send_queue_status(self, queue_size: int):
+        """Send current queue count to frontend (streaming variant)"""
+        # Same implementation as parent
+        super().send_queue_status(queue_size)
+
 
 class OutputHandler:
     """
@@ -311,6 +344,18 @@ class OutputHandler:
             self.strategy.send_processing()
         except Exception as e:
             logger.error(f"Error sending processing status: {e}")
+
+    def send_queue_status(self, queue_size: int):
+        """
+        Send queue status to frontend (queue count).
+
+        Args:
+            queue_size: Current number of screenshots in queue
+        """
+        try:
+            self.strategy.send_queue_status(queue_size)
+        except Exception as e:
+            logger.error(f"Error sending queue status: {e}")
 
     def get_streaming_callback(self):
         """

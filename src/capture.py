@@ -33,23 +33,31 @@ class ScreenCapture:
             tuple: (PIL Image object, saved file path or None)
         """
         try:
+            logger.info(f"[ScreenCapture.capture_fullscreen] >>> START: Getting monitor info...")
             # Capture the primary monitor
             monitor = self.sct.monitors[1]  # monitors[0] is "all monitors", [1] is primary
+            logger.info(f"[ScreenCapture.capture_fullscreen] Monitor: {monitor}")
+            logger.info(f"[ScreenCapture.capture_fullscreen] Calling sct.grab()...")
             screenshot = self.sct.grab(monitor)
+            logger.info(f"[ScreenCapture.capture_fullscreen] ✓ grab() returned, size: {screenshot.size}")
 
             # Convert to PIL Image
+            logger.info(f"[ScreenCapture.capture_fullscreen] Converting to PIL Image...")
             img = Image.frombytes('RGB', screenshot.size, screenshot.rgb)
+            logger.info(f"[ScreenCapture.capture_fullscreen] ✓ PIL Image created: {img.size}")
 
             # Save if configured
             saved_path = None
             if self.config.save_screenshots:
+                logger.info(f"[ScreenCapture.capture_fullscreen] Saving screenshot...")
                 saved_path = self._save_screenshot(img)
+                logger.info(f"[ScreenCapture.capture_fullscreen] ✓ Saved to: {saved_path}")
 
-            logger.info(f"Screenshot captured: {img.size}")
+            logger.info(f"[ScreenCapture.capture_fullscreen] >>> DONE: Screenshot captured: {img.size}")
             return img, saved_path
 
         except Exception as e:
-            logger.error(f"Failed to capture screenshot: {e}")
+            logger.error(f"[ScreenCapture.capture_fullscreen] ERROR: Failed to capture: {e}", exc_info=True)
             raise
 
     def _save_screenshot(self, img: Image.Image) -> str:
@@ -131,24 +139,25 @@ class ScreenCapture:
 class KeyboardListener:
     """
     Keyboard listener using pynput (MacOS-optimized)
-    Supports configurable hotkeys
+    Supports multiple trigger keys with a single listener to avoid TIS/TSM crashes
     """
 
-    def __init__(self, on_trigger: Callable):
+    def __init__(self, on_trigger: Callable[[str], None], trigger_keys: list[str]):
         """
         Initialize keyboard listener
 
         Args:
-            on_trigger: Callback function to call when trigger key is pressed
+            on_trigger: Callback function that receives the key that was pressed
+            trigger_keys: List of trigger keys to listen for
         """
         self.config = get_config()
         self.on_trigger = on_trigger
         self.listener: Optional[keyboard.Listener] = None
         self.running = False
 
-        # Parse trigger key configuration
-        self.trigger_key = self._parse_trigger_key(self.config.trigger_key)
-        logger.info(f"Keyboard listener initialized with trigger: {self.config.trigger_key}")
+        # Parse all trigger keys
+        self.trigger_keys = [self._parse_trigger_key(k) for k in trigger_keys]
+        logger.info(f"Keyboard listener initialized with triggers: {self.trigger_keys}")
 
     def _parse_trigger_key(self, key_string: str) -> str:
         """
@@ -163,28 +172,22 @@ class KeyboardListener:
         return key_string.strip()
 
     def _on_press(self, key):
-        """Internal callback for key press events"""
+        """Internal callback for key press events - checks against multiple trigger keys"""
         try:
-            # Debug: log all key presses
-            key_info = f"char='{key.char}'" if hasattr(key, 'char') else f"special={key}"
-            logger.debug(f"Key pressed: {key_info}, looking for: '{self.trigger_key}'")
-
-            # Handle regular character keys
+            # Try to match against regular character keys
             if hasattr(key, 'char') and key.char is not None:
-                if key.char == self.trigger_key:
-                    logger.info(f"✓ Trigger key matched: {self.trigger_key}")
-                    self.on_trigger()
+                if key.char in self.trigger_keys:
+                    logger.info(f"[KeyboardListener._on_press] ✓ Key '{key.char}' matched, calling on_trigger...")
+                    self.on_trigger(key.char)
                     return
 
-        except AttributeError:
-            pass
-
-        # Handle special keys (F1-F12, etc.)
-        try:
+            # Try to match against special keys (F1-F12, etc.)
             key_name = str(key).replace('Key.', '')
-            if key_name == self.trigger_key:
-                logger.info(f"✓ Trigger key matched (special): {self.trigger_key}")
-                self.on_trigger()
+            if key_name in self.trigger_keys:
+                logger.info(f"[KeyboardListener._on_press] ✓ Special key '{key_name}' matched, calling on_trigger...")
+                self.on_trigger(key_name)
+                return
+
         except Exception as e:
             logger.error(f"Error in key handler: {e}")
 
@@ -257,37 +260,107 @@ class MouseListener:
 class CaptureManager:
     """
     Main manager coordinating screenshot capture and input events (keyboard + mouse)
+    Supports single-shot and queue-based workflows
+
+    IMPORTANT: Uses a SINGLE keyboard listener to avoid macOS TIS/TSM API crash
     """
 
-    def __init__(self, on_screenshot_callback: Callable[[Image.Image, Optional[str]], None]):
+    def __init__(self,
+                 on_screenshot_callback: Callable[[Image.Image, Optional[str]], None],
+                 on_queue_add_callback: Callable[[Image.Image, Optional[str]], None] = None,
+                 on_queue_send_callback: Callable[[], None] = None):
         """
         Initialize capture manager
 
         Args:
             on_screenshot_callback: Function to call with (image, saved_path) when screenshot is taken
+            on_queue_add_callback: Optional function to call when queue key is pressed
+            on_queue_send_callback: Optional function to call when send key is pressed
         """
         self.config = get_config()
         self.screen_capture = ScreenCapture()
-        self.keyboard_listener = KeyboardListener(on_trigger=self._handle_trigger)
         self.on_screenshot_callback = on_screenshot_callback
+
+        # Queue callbacks (optional)
+        self.on_queue_add_callback = on_queue_add_callback
+        self.on_queue_send_callback = on_queue_send_callback
+
+        # Collect all trigger keys and their handlers
+        # Format: {trigger_key: callback_function}
+        self.key_handlers: dict[str, Callable] = {}
+
+        # Primary trigger key
+        self.key_handlers[self.config.trigger_key] = self._handle_trigger
+
+        # Queue keys (if configured)
+        if self.config.queue_key and on_queue_add_callback:
+            self.key_handlers[self.config.queue_key] = self._handle_queue_add
+            logger.info(f"Queue key '{self.config.queue_key}' registered")
+
+        if self.config.send_key and on_queue_send_callback:
+            self.key_handlers[self.config.send_key] = self._handle_queue_send
+            logger.info(f"Send key '{self.config.send_key}' registered")
+
+        # Create SINGLE keyboard listener with all keys
+        self.keyboard_listener = KeyboardListener(
+            on_trigger=self._handle_any_key,
+            trigger_keys=list(self.key_handlers.keys())
+        )
+        logger.info(f"CaptureManager initialized with {len(self.key_handlers)} key(s): {list(self.key_handlers.keys())}")
 
         # Initialize mouse listener if enabled
         self.mouse_listener: Optional[MouseListener] = None
         if self.config.enable_middle_button:
             self.mouse_listener = MouseListener(on_trigger=self._handle_trigger)
-            logger.info("CaptureManager initialized with keyboard + mouse triggers")
+            logger.info("Mouse listener also enabled")
+
+    def _handle_any_key(self, key: str):
+        """
+        Unified handler for all registered keys - called by single listener
+        Routes to appropriate handler based on which key was pressed
+        """
+        if key in self.key_handlers:
+            logger.info(f"[CaptureManager] Key '{key}' pressed, routing to handler")
+            handler = self.key_handlers[key]
+            handler()
         else:
-            logger.info("CaptureManager initialized with keyboard trigger only")
+            logger.warning(f"[CaptureManager] Unregistered key pressed: '{key}'")
 
     def _handle_trigger(self):
         """Internal handler for trigger key/button press"""
         try:
-            logger.info("Trigger activated - capturing screenshot")
+            logger.info(f"[CaptureManager._handle_trigger] >>> START: Trigger activated")
+            logger.info(f"[CaptureManager._handle_trigger] Calling capture_fullscreen()...")
             img, saved_path = self.screen_capture.capture_fullscreen()
+            logger.info(f"[CaptureManager._handle_trigger] ✓ capture_fullscreen() returned: img={img.size}, path={saved_path}")
+            logger.info(f"[CaptureManager._handle_trigger] Calling on_screenshot_callback()...")
             self.on_screenshot_callback(img, saved_path)
+            logger.info(f"[CaptureManager._handle_trigger] ✓ on_screenshot_callback() returned")
+            logger.info(f"[CaptureManager._handle_trigger] >>> DONE: Trigger completed")
 
         except Exception as e:
-            logger.error(f"Error handling trigger: {e}")
+            logger.error(f"[CaptureManager._handle_trigger] ERROR: {e}", exc_info=True)
+
+    def _handle_queue_add(self):
+        """Handle queue key press - add screenshot to queue"""
+        try:
+            logger.info("Queue key activated - capturing screenshot for queue")
+            img, saved_path = self.screen_capture.capture_fullscreen()
+            # Call the queue add callback with the screenshot
+            # The callback signature is: Callable[[Image.Image, Optional[str]], None]
+            if self.on_queue_add_callback:
+                self.on_queue_add_callback(img, saved_path)
+        except Exception as e:
+            logger.error(f"Error handling queue add: {e}")
+
+    def _handle_queue_send(self):
+        """Handle send key press - send queue for analysis"""
+        try:
+            logger.info("Send key activated - processing queue")
+            if self.on_queue_send_callback:
+                self.on_queue_send_callback()
+        except Exception as e:
+            logger.error(f"Error handling queue send: {e}")
 
     def start(self):
         """Start the capture manager (keyboard + mouse listeners)"""

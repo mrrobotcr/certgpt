@@ -6,6 +6,15 @@
         <span class="logo-icon">⚡</span>
         <span class="logo-text">ExamsGPT</span>
       </div>
+
+      <!-- Queue Status Badge -->
+      <div v-if="queueSize > 0"
+           class="queue-badge"
+           :data-warning="queueSize >= 5">
+        <span class="queue-icon">📸</span>
+        <span class="queue-count">{{ queueSize }}</span>
+      </div>
+
       <div class="connection-status" :class="{ connected }">
         <span class="status-pulse"></span>
         <span class="status-text">{{ connected ? 'LIVE' : 'CONNECTING' }}</span>
@@ -288,7 +297,7 @@ import { useSocket } from './composables/useSocket'
 import type { ParsedAnswer } from './types/events'
 
 // Socket.IO connection - replaces all SSE logic!
-const { connected, isProcessing, currentAnswer, isStreaming, streamingReasoning, streamingError, isSearching } = useSocket()
+const { connected, isProcessing, currentAnswer, isStreaming, streamingReasoning, streamingError, isSearching, queueSize } = useSocket()
 
 // Auto-scroll for reasoning content
 const reasoningContentRef = ref<HTMLElement | null>(null)
@@ -534,6 +543,43 @@ const formatSourceUrl = (url: string) => {
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(0.9); }
+}
+
+/* Queue Status Badge */
+.queue-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(254, 228, 64, 0.15);
+  border: 1px solid rgba(254, 228, 64, 0.4);
+  border-radius: 100px;
+  animation: queuePulse 2s ease-in-out infinite;
+}
+
+@keyframes queuePulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(254, 228, 64, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(254, 228, 64, 0.6); }
+}
+
+.queue-icon {
+  font-size: 0.875rem;
+}
+
+.queue-count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-yellow);
+}
+
+.queue-badge[data-warning="true"] {
+  background: rgba(247, 37, 133, 0.15);
+  border-color: rgba(247, 37, 133, 0.4);
+}
+
+.queue-badge[data-warning="true"] .queue-count {
+  color: var(--accent-magenta);
 }
 
 /* Main */

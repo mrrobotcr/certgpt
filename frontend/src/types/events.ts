@@ -37,7 +37,13 @@ export interface StreamingCompleteData {
   error?: string
 }
 
-export type EventData = AnswerData | ProcessingData | StreamingChunkData | StreamingCompleteData
+export interface QueueStatusData {
+  type: 'queue_status'
+  queue_size: number
+  timestamp: string
+}
+
+export type EventData = AnswerData | ProcessingData | StreamingChunkData | StreamingCompleteData | QueueStatusData
 
 // Parsed answer structures for different question types
 export interface SingleChoiceAnswer {

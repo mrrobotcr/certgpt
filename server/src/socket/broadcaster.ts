@@ -40,7 +40,13 @@ export interface StreamingCompleteData {
   error?: string
 }
 
-export type EventData = AnswerData | ProcessingData | StreamingChunkData | StreamingCompleteData
+export interface QueueStatusData {
+  type: 'queue_status'
+  queue_size: number
+  timestamp: string
+}
+
+export type EventData = AnswerData | ProcessingData | StreamingChunkData | StreamingCompleteData | QueueStatusData
 
 function generateMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
@@ -132,6 +138,14 @@ export class Broadcaster {
     this.io.emit('streaming_complete', payload)
 
     console.log(`[Broadcaster] Streaming complete emitted [${messageId}]: ${data.success ? 'Success' : 'Error'}`)
+  }
+
+  /**
+   * Emit queue status to all connected clients
+   */
+  emitQueueStatus(data: QueueStatusData): void {
+    this.io.emit('queue_status', data)
+    console.log(`[Broadcaster] Queue status emitted: ${data.queue_size} screenshot(s)`)
   }
 
   /**
