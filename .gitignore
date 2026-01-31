@@ -76,3 +76,4 @@ logs/.restart_history
 *CLAUDE.md*
 *.webp
 logs/*
+logs/history.jsonl
